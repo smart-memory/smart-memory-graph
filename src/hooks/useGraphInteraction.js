@@ -51,6 +51,7 @@ export function useGraphInteraction({
       setPathNodes((prev) => {
         const next = [...prev, nodeData.id];
         if (next.length === 2) {
+          if (!adapter) { setPathMode(false); return []; }
           adapter.findPath(next[0], next[1]).then((result) => {
             setPathResult(result);
             if (result?.path) {
@@ -99,6 +100,7 @@ export function useGraphInteraction({
 
   // Expand neighbors
   const handleExpand = useCallback(async (nodeId) => {
+    if (!adapter) return;
     setExpanding(true);
     try {
       const res = await adapter.getNeighbors(nodeId);
@@ -205,6 +207,7 @@ export function useGraphInteraction({
       setAsOfTime(null);
       return;
     }
+    if (!adapter) return;
     setTimeTravelLoading(true);
     setAsOfTime(isoTimestamp);
     try {
@@ -298,6 +301,7 @@ export function useGraphInteraction({
     asOfTime,
     timeTravelLoading,
     layout,
+    adapterAvailable: !!adapter,
     handleNodeClick,
     handleNodeDblClick,
     handleNodeUpdate,
