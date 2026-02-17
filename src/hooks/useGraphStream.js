@@ -34,10 +34,15 @@ export function useGraphStream(options = {}) {
     onGroundingFlash,
   } = options;
 
-  // Build authenticated WS URL
-  const authenticatedWsUrl = token && wsUrl
-    ? `${wsUrl}${wsUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-    : wsUrl;
+  // Build Sec-WebSocket-Protocol array for auth (avoids token in URL logs)
+  const wsProtocols = (() => {
+    const protocols = ['sm.v1'];
+    if (token) {
+      const enc = btoa(token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      protocols.push(`auth.${enc}`);
+    }
+    return protocols;
+  })();
 
   const [status, setStatus] = useState('disconnected');
   const [operations, setOperations] = useState([]);
@@ -218,7 +223,7 @@ export function useGraphStream(options = {}) {
       setStatus('connecting');
 
       try {
-        ws = new WebSocket(authenticatedWsUrl);
+        ws = new WebSocket(wsUrl, wsProtocols);
       } catch {
         setStatus('disconnected');
         scheduleReconnect();
@@ -296,7 +301,7 @@ export function useGraphStream(options = {}) {
         ws.close();
       }
     };
-  }, [authenticatedWsUrl, enabled, wsUrl, flushBatch]);
+  }, [wsUrl, token, enabled, flushBatch]);
 
   const pause = useCallback(() => {
     isPausedRef.current = true;
