@@ -48,16 +48,16 @@ export default function GraphExplorer({
     refresh = internalData.refresh;
     incrementStats = internalData.incrementStats;
     error = internalData.error;
-    // Merge external data as overlay (dedup by id)
+    // Merge external data as overlay (dedup by id, external wins collisions)
     if (hasExternal) {
       const seenNodeIds = new Set();
       const mergedNodes = [];
-      for (const n of [...(internalData.nodes || []), ...(externalData.nodes || [])]) {
+      for (const n of [...(externalData.nodes || []), ...(internalData.nodes || [])]) {
         if (!seenNodeIds.has(n.id)) { seenNodeIds.add(n.id); mergedNodes.push(n); }
       }
       const seenEdgeIds = new Set();
       const mergedEdges = [];
-      for (const e of [...(internalData.edges || []), ...(externalData.edges || [])]) {
+      for (const e of [...(externalData.edges || []), ...(internalData.edges || [])]) {
         if (!seenEdgeIds.has(e.id)) { seenEdgeIds.add(e.id); mergedEdges.push(e); }
       }
       nodes = mergedNodes;
