@@ -42,11 +42,11 @@ export function classifyEvent(raw) {
     }
   }
 
-  // Pipeline stages
+  // Pipeline stages (includes evolution lifecycle events)
   if (component === 'pipeline' || (name && name.startsWith('pipeline.'))) {
     const stage = operation || name?.split('.').pop() || 'unknown';
     const durationStr = raw.duration_ms != null ? ` (${Math.round(raw.duration_ms)}ms)` : '';
-    return { ...base, category: 'pipeline_stage', label: `Pipeline: ${stage}${durationStr}`, nodeId: memoryId };
+    return { ...base, category: 'pipeline_stage', label: `Pipeline: ${stage.replace(/_/g, ' ')}${durationStr}`, nodeId: memoryId };
   }
 
   // Search

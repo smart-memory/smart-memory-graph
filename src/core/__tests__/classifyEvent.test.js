@@ -134,4 +134,49 @@ describe('classifyEvent', () => {
     const b = classifyEvent(makeEvent({ event_id: undefined }));
     expect(a.id).not.toBe(b.id);
   });
+
+  describe('evolution lifecycle events (pipeline component)', () => {
+    const EVOLUTION_OPS = [
+      'evolution_cycle',
+      'dream_phase',
+      'opinion_synthesis',
+      'observation_synthesis',
+      'opinion_reinforcement',
+    ];
+
+    it.each(EVOLUTION_OPS)('%s classifies as pipeline_stage', (op) => {
+      const result = classifyEvent(makeEvent({
+        component: 'pipeline',
+        operation: op,
+        name: null,
+        data: { workspace_id: 'ws-1', status: 'completed' },
+        duration_ms: null,
+      }));
+      expect(result).not.toBeNull();
+      expect(result.category).toBe('pipeline_stage');
+    });
+
+    it.each(EVOLUTION_OPS)('%s label normalizes underscores to spaces', (op) => {
+      const result = classifyEvent(makeEvent({
+        component: 'pipeline',
+        operation: op,
+        name: null,
+        data: {},
+        duration_ms: null,
+      }));
+      expect(result.label).toBe(`Pipeline: ${op.replace(/_/g, ' ')}`);
+    });
+
+    it('unknown pipeline ops also normalize underscores to spaces', () => {
+      const result = classifyEvent(makeEvent({
+        component: 'pipeline',
+        operation: 'some_future_enricher',
+        name: null,
+        data: {},
+        duration_ms: null,
+      }));
+      expect(result.category).toBe('pipeline_stage');
+      expect(result.label).toBe('Pipeline: some future enricher');
+    });
+  });
 });
