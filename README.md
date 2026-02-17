@@ -51,7 +51,7 @@ src/
 `createFetchAdapter`, `createSDKAdapter`
 
 ### Core Utilities
-`getNodeColor`, `getNodeSize`, `MEMORY_COLORS`, `ENTITY_COLORS`, `SPECIAL_COLORS`, `NODE_SIZES`, `ALL_MEMORY_TYPES`, `ALL_ENTITY_TYPES`, `MEMORY_TYPE_SET`, `ENTITY_TYPES`, `LAYOUT_OPTIONS`, `RECIPROCAL_PAIRS`, `normalizeAPIResponse`, `normalizeExtractionResults`, `coalesceGraphData`, `classifyEvent`, `eventToGraphNode`, `eventToGraphEdge`, `searchWikipedia`, `exportPNG`, `exportSVG`, `saveRecording`, `getLastRecording`, `listRecordings`, `deleteRecording`, `clearRecordings`
+`getNodeColor`, `getNodeSize`, `MEMORY_COLORS`, `ENTITY_COLORS`, `SPECIAL_COLORS`, `NODE_SIZES`, `ALL_MEMORY_TYPES`, `ALL_ENTITY_TYPES`, `MEMORY_TYPE_SET`, `ENTITY_TYPES`, `LAYOUT_OPTIONS`, `RECIPROCAL_PAIRS`, `normalizeAPIResponse`, `normalizeExtractionResults`, `coalesceGraphData`, `classifyEvent`, `eventToGraphNode`, `eventToGraphEdge`, `searchWikipedia`, `exportPNG`, `exportSVG`, `saveRecording`, `getLastRecording`, `clearRecordings`
 
 ## Scripts
 

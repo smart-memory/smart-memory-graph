@@ -52,4 +52,4 @@ export { classifyEvent } from './core/classifyEvent';
 export { eventToGraphNode, eventToGraphEdge } from './core/eventTransform';
 export { searchWikipedia } from './core/wikipedia';
 export { exportPNG, exportSVG } from './core/export';
-export { saveRecording, getLastRecording, listRecordings, deleteRecording, clearRecordings } from './core/eventStore';
+export { saveRecording, getLastRecording, clearRecordings } from './core/eventStore';
