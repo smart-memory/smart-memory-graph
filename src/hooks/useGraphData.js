@@ -30,7 +30,7 @@ export function useGraphData(adapter) {
         graphEdges = normalized.edges;
       } catch (fullGraphErr) {
         // Auth errors: don't bother with fallback — it'll fail too
-        const status = fullGraphErr?.response?.status || fullGraphErr?.status;
+        const status = fullGraphErr?.status;
         if (status === 401 || status === 403) throw fullGraphErr;
         console.warn('[useGraphData] getFullGraph failed, falling back to listMemories:', fullGraphErr?.message || fullGraphErr);
         // Fallback: use memory list + edge bulk
