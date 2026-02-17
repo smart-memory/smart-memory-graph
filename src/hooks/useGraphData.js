@@ -28,7 +28,11 @@ export function useGraphData(adapter) {
         const normalized = normalizeAPIResponse(graphData);
         graphNodes = normalized.nodes;
         graphEdges = normalized.edges;
-      } catch {
+      } catch (fullGraphErr) {
+        // Auth errors: don't bother with fallback — it'll fail too
+        const status = fullGraphErr?.response?.status || fullGraphErr?.status;
+        if (status === 401 || status === 403) throw fullGraphErr;
+        console.warn('[useGraphData] getFullGraph failed, falling back to listMemories:', fullGraphErr?.message || fullGraphErr);
         // Fallback: use memory list + edge bulk
         const memoriesRes = await adapter.listMemories(2000);
         const rawMemories = memoriesRes?.items || memoriesRes?.memories || memoriesRes || [];
@@ -56,7 +60,8 @@ export function useGraphData(adapter) {
             if (!linksByNode[edge.source_id]) linksByNode[edge.source_id] = [];
             linksByNode[edge.source_id].push(link);
           }
-        } catch {
+        } catch (bulkErr) {
+          console.warn('[useGraphData] getEdgesBulk failed, falling back to individual getLinks:', bulkErr?.message || bulkErr);
           const results = await Promise.allSettled(
             memories.slice(0, 100).map((m) => {
               const id = m.item_id || m.id;
