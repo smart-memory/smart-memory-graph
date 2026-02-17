@@ -193,7 +193,7 @@ export default function GraphExplorer({
   // Error state
   if (error && nodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-900">
+      <div className={`flex items-center justify-center bg-slate-900 ${className || 'h-screen'}`}>
         <div className="text-center max-w-md">
           <div className="text-red-400 text-4xl mb-4">!</div>
           <p className="text-red-300 font-medium mb-2">Failed to load graph</p>
@@ -210,7 +210,7 @@ export default function GraphExplorer({
   }
 
   return (
-    <div className={`h-screen w-screen flex flex-col bg-slate-900 overflow-hidden ${className}`}>
+    <div className={`flex flex-col bg-slate-900 overflow-hidden ${className || 'h-screen w-screen'}`}>
       {loading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 pointer-events-none">
           <div className="text-center">

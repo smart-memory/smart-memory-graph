@@ -77,23 +77,28 @@ export function normalizeAPIResponse(apiData) {
 export function normalizeExtractionResults(entities, relations) {
   const nodes = (entities || []).map((e) => ({
     id: e.item_id || e.id || e.name,
-    label: e.label || e.name,
-    type: e.entity_type || e.type || 'concept',
+    label: e.label || e.name || e.content?.substring(0, 40) || '',
+    type: e.entity_type || e.metadata?.entity_type || e.type || 'concept',
     category: 'entity',
     content: e.content || '',
-    confidence: e.confidence,
+    confidence: e.confidence ?? e.metadata?.confidence,
     metadata: e.metadata,
   }));
 
-  const edges = (relations || []).map((r) => ({
-    id: r.id || `${r.source}->${r.target}:${r.type}`,
-    source: r.source_id || r.source,
-    target: r.target_id || r.target,
-    label: r.edge_type || r.type || 'RELATES_TO',
-    type: r.edge_type || r.type || 'RELATES_TO',
-    confidence: r.confidence,
-    metadata: r.metadata,
-  }));
+  const edges = (relations || []).map((r) => {
+    const source = r.source_id || r.source;
+    const target = r.target_id || r.target;
+    const relType = r.relation_type || r.edge_type || r.type || 'RELATES_TO';
+    return {
+      id: r.id || `${source}->${target}:${relType}`,
+      source,
+      target,
+      label: relType,
+      type: relType,
+      confidence: r.confidence,
+      metadata: r.metadata,
+    };
+  });
 
   return { nodes, edges };
 }
