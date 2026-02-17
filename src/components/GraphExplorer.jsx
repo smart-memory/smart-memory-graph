@@ -36,11 +36,50 @@ export default function GraphExplorer({
   wsToken,
   className = '',
 }) {
-  // Data: use external data (controlled) or fetch via adapter (uncontrolled)
-  const internalData = useGraphData(externalData ? null : adapter);
-  const { nodes, edges, loading, error, stats, refresh, incrementStats } = externalData
-    ? { nodes: externalData.nodes, edges: externalData.edges, loading: false, error: null, stats: { nodes: externalData.nodes.length, edges: externalData.edges.length, types: {} }, refresh: () => {}, incrementStats: () => {} }
-    : internalData;
+  // Data: controlled (data only), uncontrolled (adapter only), or hybrid (both).
+  // Hybrid mode: adapter powers refresh/reconnect, external data merges as overlay.
+  const internalData = useGraphData(adapter || null);
+  const hasExternal = externalData && (externalData.nodes?.length > 0 || externalData.edges?.length > 0);
+  const hasInternal = !internalData.loading && (internalData.nodes.length > 0 || internalData.edges.length > 0);
+
+  let nodes, edges, loading, error, stats, refresh, incrementStats;
+  if (adapter) {
+    // Uncontrolled or hybrid: adapter drives fetch/refresh
+    refresh = internalData.refresh;
+    incrementStats = internalData.incrementStats;
+    error = internalData.error;
+    // Merge external data as overlay (dedup by id)
+    if (hasExternal) {
+      const seenNodeIds = new Set();
+      const mergedNodes = [];
+      for (const n of [...(internalData.nodes || []), ...(externalData.nodes || [])]) {
+        if (!seenNodeIds.has(n.id)) { seenNodeIds.add(n.id); mergedNodes.push(n); }
+      }
+      const seenEdgeIds = new Set();
+      const mergedEdges = [];
+      for (const e of [...(internalData.edges || []), ...(externalData.edges || [])]) {
+        if (!seenEdgeIds.has(e.id)) { seenEdgeIds.add(e.id); mergedEdges.push(e); }
+      }
+      nodes = mergedNodes;
+      edges = mergedEdges;
+      loading = false; // show external data immediately while adapter loads
+      stats = { nodes: mergedNodes.length, edges: mergedEdges.length, types: internalData.stats?.types || {} };
+    } else {
+      nodes = internalData.nodes;
+      edges = internalData.edges;
+      loading = internalData.loading;
+      stats = internalData.stats;
+    }
+  } else {
+    // Pure controlled mode: external data only, no adapter
+    nodes = externalData?.nodes || [];
+    edges = externalData?.edges || [];
+    loading = false;
+    error = null;
+    stats = { nodes: nodes.length, edges: edges.length, types: {} };
+    refresh = () => {};
+    incrementStats = () => {};
+  }
 
   const filters = useGraphFilters(nodes, edges);
   const containerRef = useRef(null);
