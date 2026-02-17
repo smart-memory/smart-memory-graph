@@ -1,4 +1,4 @@
-import { MEMORY_COLORS, ENTITY_COLORS, SPECIAL_COLORS } from '../core/graphColors';
+import { MEMORY_COLORS, ENTITY_COLORS, SPECIAL_COLORS, ANNOTATION_COLORS, ANNOTATION_BORDERS } from '../core/graphColors';
 
 export function getCytoscapeStyles() {
   const styles = [
@@ -188,6 +188,67 @@ export function getCytoscapeStyles() {
       'padding': '12px',
     },
   });
+
+  // ── Annotation styles (channel-scoped) ──────────────────────────────
+  // Generated from contracts/graph-annotations.json
+  // Token format: anno-{channel}-{kind}-{value}
+
+  // Fill channel (background-color for nodes, line-color for edges)
+  for (const [kind, values] of Object.entries(ANNOTATION_COLORS)) {
+    if (kind === 'search_match') continue;
+    for (const [value, color] of Object.entries(values)) {
+      if (typeof color !== 'string') continue;
+      styles.push({
+        selector: `node.anno-fill-${kind}-${value}`,
+        style: { 'background-color': color },
+      });
+      styles.push({
+        selector: `edge.anno-fill-${kind}-${value}`,
+        style: { 'line-color': color },
+      });
+    }
+  }
+
+  // Border channel (border-color, border-style, border-width)
+  for (const [kind, values] of Object.entries(ANNOTATION_BORDERS || {})) {
+    for (const [value, border] of Object.entries(values)) {
+      styles.push({
+        selector: `node.anno-border-${kind}-${value}`,
+        style: {
+          'border-color': border.color,
+          'border-style': border.style,
+          'border-width': border.width,
+        },
+      });
+    }
+  }
+
+  // Opacity channel (confidence kind only)
+  const opacityMap = { high: 1.0, medium: 0.7, low: 0.4, unscored: 0.5 };
+  const confidenceColors = ANNOTATION_COLORS.confidence;
+  if (confidenceColors) {
+    for (const value of Object.keys(confidenceColors)) {
+      styles.push({
+        selector: `node.anno-opacity-confidence-${value}`,
+        style: { opacity: opacityMap[value] || 0.7 },
+      });
+    }
+  }
+
+  // Overlay channel (search_match — channel-locked)
+  const searchColors = ANNOTATION_COLORS.search_match || {};
+  for (const [value, config] of Object.entries(searchColors)) {
+    if (typeof config === 'object' && config.color) {
+      styles.push({
+        selector: `node.anno-overlay-search_match-${value}`,
+        style: {
+          'overlay-color': config.color,
+          'overlay-opacity': config.opacity || 0,
+          'overlay-padding': config.padding || 0,
+        },
+      });
+    }
+  }
 
   return styles;
 }

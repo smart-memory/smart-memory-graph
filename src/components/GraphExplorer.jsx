@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import CytoscapeCanvas from './CytoscapeCanvas';
 import Toolbar from './Toolbar';
 import FilterPanel from './FilterPanel';
@@ -23,7 +23,9 @@ import { graphNodeToCyElement, graphEdgeToCyElement } from '../internal/cytoscap
  * @param {Object} props
  * @param {GraphAPIAdapter} props.adapter - API adapter for data fetching
  * @param {{ nodes: GraphNode[], edges: GraphEdge[] }} [props.data] - External data (controlled mode)
- * @param {Object} [props.annotations] - Annotations overlay (future)
+ * @param {GraphAnnotations} [props.annotations] - Annotation overlay.
+ *   Shape: { nodes: Record<id, {kind, value}[]>, edges: Record<id, {kind, value}[]>,
+ *            activeKinds: string[], precedence?: string[] }
  * @param {string} [props.wsUrl] - WebSocket URL for streaming
  * @param {string} [props.wsToken] - JWT token for WebSocket auth
  * @param {string} [props.className] - Additional CSS classes
@@ -39,47 +41,67 @@ export default function GraphExplorer({
   // Data: controlled (data only), uncontrolled (adapter only), or hybrid (both).
   // Hybrid mode: adapter powers refresh/reconnect, external data merges as overlay.
   const internalData = useGraphData(adapter || null);
-  const hasExternal = externalData && (externalData.nodes?.length > 0 || externalData.edges?.length > 0);
-  const hasInternal = !internalData.loading && (internalData.nodes.length > 0 || internalData.edges.length > 0);
+  const externalNodes = externalData?.nodes || [];
+  const externalEdges = externalData?.edges || [];
+  const hasExternal = externalNodes.length > 0 || externalEdges.length > 0;
 
-  let nodes, edges, loading, error, stats, refresh, incrementStats;
-  if (adapter) {
-    // Uncontrolled or hybrid: adapter drives fetch/refresh
-    refresh = internalData.refresh;
-    incrementStats = internalData.incrementStats;
-    error = internalData.error;
-    // Merge external data as overlay (dedup by id, external wins collisions)
-    if (hasExternal) {
-      const seenNodeIds = new Set();
-      const mergedNodes = [];
-      for (const n of [...(externalData.nodes || []), ...(internalData.nodes || [])]) {
-        if (!seenNodeIds.has(n.id)) { seenNodeIds.add(n.id); mergedNodes.push(n); }
+  // Memoize merged data to prevent layout thrash from unrelated re-renders.
+  // In hybrid mode, merged arrays were previously rebuilt every render, causing
+  // the setElements+layout effect to fire on every WS/stream/ops update.
+  const { nodes, edges, loading, error, stats, refresh, incrementStats } = useMemo(() => {
+    if (adapter) {
+      const _refresh = internalData.refresh;
+      const _incrementStats = internalData.incrementStats;
+      const _error = internalData.error;
+
+      if (hasExternal) {
+        const seenNodeIds = new Set();
+        const mergedNodes = [];
+        for (const n of [...externalNodes, ...(internalData.nodes || [])]) {
+          if (!seenNodeIds.has(n.id)) { seenNodeIds.add(n.id); mergedNodes.push(n); }
+        }
+        const seenEdgeIds = new Set();
+        const mergedEdges = [];
+        for (const e of [...externalEdges, ...(internalData.edges || [])]) {
+          if (!seenEdgeIds.has(e.id)) { seenEdgeIds.add(e.id); mergedEdges.push(e); }
+        }
+        return {
+          nodes: mergedNodes,
+          edges: mergedEdges,
+          loading: false,
+          error: _error,
+          stats: { nodes: mergedNodes.length, edges: mergedEdges.length, types: internalData.stats?.types || {} },
+          refresh: _refresh,
+          incrementStats: _incrementStats,
+        };
       }
-      const seenEdgeIds = new Set();
-      const mergedEdges = [];
-      for (const e of [...(externalData.edges || []), ...(internalData.edges || [])]) {
-        if (!seenEdgeIds.has(e.id)) { seenEdgeIds.add(e.id); mergedEdges.push(e); }
-      }
-      nodes = mergedNodes;
-      edges = mergedEdges;
-      loading = false; // show external data immediately while adapter loads
-      stats = { nodes: mergedNodes.length, edges: mergedEdges.length, types: internalData.stats?.types || {} };
-    } else {
-      nodes = internalData.nodes;
-      edges = internalData.edges;
-      loading = internalData.loading;
-      stats = internalData.stats;
+      return {
+        nodes: internalData.nodes,
+        edges: internalData.edges,
+        loading: internalData.loading,
+        error: _error,
+        stats: internalData.stats,
+        refresh: _refresh,
+        incrementStats: _incrementStats,
+      };
     }
-  } else {
-    // Pure controlled mode: external data only, no adapter
-    nodes = externalData?.nodes || [];
-    edges = externalData?.edges || [];
-    loading = false;
-    error = null;
-    stats = { nodes: nodes.length, edges: edges.length, types: {} };
-    refresh = () => {};
-    incrementStats = () => {};
-  }
+    // Pure controlled mode
+    const _nodes = externalNodes;
+    const _edges = externalEdges;
+    return {
+      nodes: _nodes,
+      edges: _edges,
+      loading: false,
+      error: null,
+      stats: { nodes: _nodes.length, edges: _edges.length, types: {} },
+      refresh: () => {},
+      incrementStats: () => {},
+    };
+  }, [
+    adapter, hasExternal, externalNodes, externalEdges,
+    internalData.nodes, internalData.edges, internalData.loading,
+    internalData.error, internalData.stats, internalData.refresh, internalData.incrementStats,
+  ]);
 
   const filters = useGraphFilters(nodes, edges);
   const containerRef = useRef(null);
@@ -178,6 +200,18 @@ export default function GraphExplorer({
   useEffect(() => {
     cytoscape.applyFilter(filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter);
   }, [filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter, cytoscape]);
+
+  // Apply annotations whenever they change OR data is replaced.
+  // setElements() destroys all Cytoscape elements (and their classes), so annotations
+  // must be reapplied even if the annotations object itself hasn't changed.
+  useEffect(() => {
+    if (!cytoscape.ready) return;
+    if (annotations) {
+      cytoscape.applyAnnotations(annotations);
+    } else {
+      cytoscape.clearAnnotations();
+    }
+  }, [annotations, cytoscape.ready, nodes, edges]);
 
   // Operations bar click handler — scrub to event state
   const handleOperationClick = useCallback((op) => {

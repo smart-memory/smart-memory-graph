@@ -53,3 +53,15 @@ export { eventToGraphNode, eventToGraphEdge } from './core/eventTransform';
 export { searchWikipedia } from './core/wikipedia';
 export { exportPNG, exportSVG } from './core/export';
 export { saveRecording, getLastRecording, clearRecordings } from './core/eventStore';
+
+// --- Annotations ---
+export { default as AnnotationLegend } from './components/AnnotationLegend';
+export { buildAnnotationLegend } from './core/annotationLegend';
+export { resolveAnnotationSets } from './core/resolveAnnotationSets';
+export {
+  ANNOTATION_COLORS,
+  ANNOTATION_BORDERS,
+  ANNOTATION_KINDS,
+  ANNOTATION_PRECEDENCE,
+  CHANNEL_LOCKED_KINDS,
+} from './core/graphColors';

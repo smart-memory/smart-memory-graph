@@ -3,6 +3,7 @@ import cytoscape from 'cytoscape';
 import coseBilkent from 'cytoscape-cose-bilkent';
 import dagre from 'cytoscape-dagre';
 import { getCytoscapeStyles } from './cytoscapeStyles';
+import { ANNOTATION_PRECEDENCE, CHANNEL_LOCKED_KINDS } from '../core/graphColors';
 
 // Register layout extensions once
 let registered = false;
@@ -227,6 +228,88 @@ export function useCytoscape(containerRef) {
     });
   }, []);
 
+  const applyAnnotations = useCallback((annotations) => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    cy.batch(() => {
+      // 1. Clear all previous annotation classes
+      cy.elements().forEach((ele) => {
+        const classes = ele.classes();
+        classes.forEach((cls) => {
+          if (cls.startsWith('anno-')) ele.removeClass(cls);
+        });
+      });
+
+      if (!annotations || !annotations.activeKinds?.length) return;
+
+      // 2. Resolve precedence per element.
+      // Channel assignment is computed per-element based on which kinds are actually
+      // present on that element, not globally. A node with only 'confidence' gets
+      // fill for confidence, even if diff/ontology_status are globally active.
+      const precedence = annotations.precedence || ANNOTATION_PRECEDENCE;
+      const availableChannels = ['fill', 'border', 'opacity'];
+      const lockedKinds = CHANNEL_LOCKED_KINDS || {};
+
+      const resolveChannels = (annoList) => {
+        const assignment = {};
+        // Channel-locked kinds first
+        for (const anno of annoList) {
+          if (lockedKinds[anno.kind]) {
+            assignment[anno.kind] = lockedKinds[anno.kind];
+          }
+        }
+        // Competing kinds by precedence (only kinds present on this element)
+        const presentKinds = new Set(annoList.map((a) => a.kind));
+        let chIdx = 0;
+        for (const kind of precedence) {
+          if (!presentKinds.has(kind)) continue;
+          if (assignment[kind]) continue;
+          if (chIdx < availableChannels.length) {
+            assignment[kind] = availableChannels[chIdx++];
+          }
+        }
+        return assignment;
+      };
+
+      // 3. Apply channel-scoped classes
+      const applyToElement = (eleId, annoList) => {
+        const ele = cy.getElementById(eleId);
+        if (!ele.length) return;
+        const assignment = resolveChannels(annoList);
+        for (const anno of annoList) {
+          const channel = assignment[anno.kind];
+          if (!channel) continue;
+          ele.addClass(`anno-${channel}-${anno.kind}-${anno.value}`);
+        }
+      };
+
+      if (annotations.nodes) {
+        for (const [nodeId, annoList] of Object.entries(annotations.nodes)) {
+          applyToElement(nodeId, annoList);
+        }
+      }
+      if (annotations.edges) {
+        for (const [edgeId, annoList] of Object.entries(annotations.edges)) {
+          applyToElement(edgeId, annoList);
+        }
+      }
+    });
+  }, []);
+
+  const clearAnnotations = useCallback(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      cy.elements().forEach((ele) => {
+        const classes = ele.classes();
+        classes.forEach((cls) => {
+          if (cls.startsWith('anno-')) ele.removeClass(cls);
+        });
+      });
+    });
+  }, []);
+
   const clearHighlights = useCallback(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -362,6 +445,8 @@ export function useCytoscape(containerRef) {
     zoomOut,
     fitToScreen,
     applyFilter,
+    applyAnnotations,
+    clearAnnotations,
     clearHighlights,
     highlightElements,
     selectNode,

@@ -1,4 +1,5 @@
 import graphColors from '@contracts/graph-colors.json';
+import annotationContract from '@contracts/graph-annotations.json';
 
 export const MEMORY_COLORS = {
   memory: graphColors.special.memory,
@@ -30,3 +31,10 @@ export const ALL_ENTITY_TYPES = Object.keys(ENTITY_COLORS);
 
 // Set of actual memory types (excludes 'memory' which is just a fallback color key)
 export const MEMORY_TYPE_SET = new Set(ALL_MEMORY_TYPES.filter((t) => t !== 'memory'));
+
+// Annotation constants (from contracts/graph-annotations.json)
+export const ANNOTATION_COLORS = annotationContract.colors;
+export const ANNOTATION_BORDERS = annotationContract.borders;
+export const ANNOTATION_KINDS = Object.keys(annotationContract.annotationKinds);
+export const ANNOTATION_PRECEDENCE = annotationContract.defaultPrecedence;
+export const CHANNEL_LOCKED_KINDS = annotationContract.channelLockedKinds;
