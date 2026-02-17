@@ -1,0 +1,55 @@
+/**
+ * @smartmemory/graph — Shared graph visualization package.
+ *
+ * Public API: components, hooks, adapters, core utilities, and CSS.
+ * Internal modules (useCytoscape, cytoscapeStyles, cytoscapeConvert) are NOT exported.
+ */
+
+// --- Components ---
+export { default as GraphExplorer } from './components/GraphExplorer';
+export { default as DetailPanel } from './components/DetailPanel';
+export { default as FilterPanel } from './components/FilterPanel';
+export { default as SearchBar } from './components/SearchBar';
+export { default as Toolbar } from './components/Toolbar';
+export { default as OperationsBar } from './components/OperationsBar';
+export { default as CytoscapeCanvas } from './components/CytoscapeCanvas';
+export { default as NodeTooltip } from './components/NodeTooltip';
+export { default as WikipediaOverlay } from './components/WikipediaOverlay';
+export { default as ReplayButton } from './components/ReplayButton';
+export { default as TimeTravelSlider } from './components/TimeTravelSlider';
+
+// --- Hooks ---
+export { useGraphData } from './hooks/useGraphData';
+export { useGraphFilters } from './hooks/useGraphFilters';
+export { useGraphStream } from './hooks/useGraphStream';
+export { useGraphInteraction } from './hooks/useGraphInteraction';
+export { useDripFeed } from './hooks/useDripFeed';
+export { useUrlState } from './hooks/useUrlState';
+export { useConnectionStatus } from './hooks/useConnectionStatus';
+export { useEntityCorrections } from './hooks/useEntityCorrections';
+
+// --- Adapters ---
+export { createFetchAdapter } from './adapters/fetchAdapter';
+export { createSDKAdapter } from './adapters/sdkAdapter';
+
+// --- Core utilities ---
+export {
+  getNodeColor,
+  getNodeSize,
+  MEMORY_COLORS,
+  ENTITY_COLORS,
+  SPECIAL_COLORS,
+  NODE_SIZES,
+  ALL_MEMORY_TYPES,
+  ALL_ENTITY_TYPES,
+  MEMORY_TYPE_SET,
+} from './core/graphColors';
+
+export { ENTITY_TYPES, LAYOUT_OPTIONS, RECIPROCAL_PAIRS } from './core/constants';
+export { normalizeAPIResponse, normalizeExtractionResults } from './core/normalize';
+export { coalesceGraphData } from './core/coalesce';
+export { classifyEvent } from './core/classifyEvent';
+export { eventToGraphNode, eventToGraphEdge } from './core/eventTransform';
+export { searchWikipedia } from './core/wikipedia';
+export { exportPNG, exportSVG } from './core/export';
+export { saveRecording, getLastRecording, listRecordings, deleteRecording, clearRecordings } from './core/eventStore';
