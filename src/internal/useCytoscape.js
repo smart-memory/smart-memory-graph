@@ -13,6 +13,20 @@ if (!registered) {
   registered = true;
 }
 
+/**
+ * Get the elements that should define the fit bounds: visible AND not dimmed.
+ * Falls back to all visible if everything is dimmed (avoids fitting to empty set).
+ */
+export function getFitElements(cy) {
+  const active = cy.elements(':visible').not('.dimmed');
+  return active.length > 0 ? active : cy.elements(':visible');
+}
+
+/** Padding proportional to the viewport's smaller dimension (5%, clamped 20–80px). */
+export function getFitPadding(cy) {
+  return Math.round(Math.max(20, Math.min(80, Math.min(cy.width(), cy.height()) * 0.05)));
+}
+
 export function useCytoscape(containerRef) {
   const cyRef = useRef(null);
   const [containerReady, setContainerReady] = useState(false);
@@ -90,7 +104,7 @@ export function useCytoscape(containerRef) {
     const resizeObserver = new ResizeObserver(() => {
       cy.resize();
       if (autoFitRef.current && cy.nodes().length > 0) {
-        cy.fit(cy.elements(':visible'), 50);
+        cy.fit(getFitElements(cy), getFitPadding(cy));
       }
     });
     resizeObserver.observe(container);
@@ -183,7 +197,7 @@ export function useCytoscape(containerRef) {
 
   const fitToScreen = useCallback(() => {
     const cy = cyRef.current;
-    if (cy) cy.fit(cy.elements(':visible'), 50);
+    if (cy) cy.fit(getFitElements(cy), getFitPadding(cy));
   }, []);
 
   const applyFilter = useCallback((visibleNodeIds, visibleEdgeTypes, cascade = true) => {

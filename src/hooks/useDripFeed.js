@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { graphNodeToCyElement, graphEdgeToCyElement } from '../internal/cytoscapeConvert';
 import { coalesceGraphData } from '../core/coalesce';
+import { getFitElements, getFitPadding } from '../internal/useCytoscape';
 
 const GLOW_DURATION = 2500;
 
@@ -41,7 +42,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
       cytoscape.runLayout(layout);
       if (!userInteractedRef.current) {
         const cy = cytoscape.cy.current;
-        if (cy) cy.fit(cy.elements(':visible'), 50);
+        if (cy) cy.fit(getFitElements(cy), getFitPadding(cy));
       }
     }, 3000);
   }, [cytoscape, layout]);
@@ -109,7 +110,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     }
 
     if (!userInteractedRef.current && !('source' in el)) {
-      cy.fit(cy.elements(':visible'), 50);
+      cy.fit(getFitElements(cy), getFitPadding(cy));
     }
 
     if (queue.length > 0) {
@@ -220,7 +221,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
           // Edge endpoint missing
         }
         if (!userInteractedRef.current && !('source' in el)) {
-          cy.fit(cy.elements(':visible'), 50);
+          cy.fit(getFitElements(cy), getFitPadding(cy));
         }
         if (i === allItems.length - 1) {
           scheduleQuietLayout();
