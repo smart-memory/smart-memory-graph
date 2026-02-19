@@ -1,6 +1,10 @@
 import { getNodeColor } from '../core/graphColors';
 
-export default function FilterPanel({ filters, onClose }) {
+export default function FilterPanel({
+  filters,
+  onClose,
+  searchBar,
+}) {
   const {
     activeMemoryTypes,
     activeEntityTypes,
@@ -20,7 +24,7 @@ export default function FilterPanel({ filters, onClose }) {
   } = filters;
 
   return (
-    <div className="w-56 bg-slate-800 border-r border-slate-700 overflow-y-auto shrink-0 flex flex-col">
+    <div className="w-56 bg-slate-800 border-r border-slate-700 shrink-0 flex flex-col">
       <div className="flex items-center justify-between p-3 border-b border-slate-700">
         <span className="text-sm font-medium text-slate-200">Filters</span>
         <button
@@ -34,6 +38,12 @@ export default function FilterPanel({ filters, onClose }) {
       </div>
 
       <div className="p-3 flex-1 overflow-y-auto space-y-4">
+        {searchBar ? (
+          <section>
+            {searchBar}
+          </section>
+        ) : null}
+
         {/* Memory Types */}
         {availableTypes.memoryTypes.length > 0 && (
           <section>
@@ -128,6 +138,12 @@ export default function FilterPanel({ filters, onClose }) {
             </label>
           </section>
         )}
+      </div>
+
+      <div className="border-t border-slate-700 p-2 bg-slate-800/95">
+        <p className="text-[11px] text-slate-500 text-center select-none">
+          Press <span className="text-slate-300">?</span> for shortcuts
+        </p>
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ import { graphNodeToCyElement, graphEdgeToCyElement } from '../internal/cytoscap
  *            activeKinds: string[], precedence?: string[] }
  * @param {string} [props.wsUrl] - WebSocket URL for streaming
  * @param {string} [props.wsToken] - JWT token for WebSocket auth
+ * @param {import('react').ReactNode} [props.toolbarRightActions] - Extra controls rendered at toolbar right side
  * @param {string} [props.className] - Additional CSS classes
  */
 export default function GraphExplorer({
@@ -36,6 +37,7 @@ export default function GraphExplorer({
   annotations,
   wsUrl,
   wsToken,
+  toolbarRightActions,
   className = '',
 }) {
   // Data: controlled (data only), uncontrolled (adapter only), or hybrid (both).
@@ -263,6 +265,17 @@ export default function GraphExplorer({
     }, 50);
   }, [cytoscape, nodes, edges, stream, interaction, dripFeed]);
 
+  const handleSearchNodeSelect = useCallback((id) => {
+    const cy = cytoscape.cy.current;
+    if (cy) {
+      const node = cy.getElementById(id);
+      if (node.length) {
+        interaction.handleNodeClick(node.data());
+        cy.animate({ center: { eles: node }, duration: 300 });
+      }
+    }
+  }, [cytoscape, interaction]);
+
   // Error state
   if (error && nodes.length === 0) {
     return (
@@ -283,7 +296,7 @@ export default function GraphExplorer({
   }
 
   return (
-    <div className={`flex flex-col bg-slate-900 overflow-hidden ${className || 'h-screen w-screen'}`}>
+    <div className={`flex min-w-0 flex-col bg-slate-900 overflow-hidden ${className || 'h-full w-full'}`}>
       {loading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 pointer-events-none">
           <div className="text-center">
@@ -310,6 +323,7 @@ export default function GraphExplorer({
         timeTravelActive={interaction.timeTravelOpen || !!interaction.asOfTime}
         autoFit={cytoscape.autoFit}
         onAutoFitChange={cytoscape.setAutoFit}
+        rightActions={toolbarRightActions}
       />
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -317,6 +331,13 @@ export default function GraphExplorer({
           <FilterPanel
             filters={filters}
             onClose={() => setFilterPanelOpen(false)}
+            searchBar={(
+              <SearchBar
+                nodes={nodes}
+                onSearch={interaction.handleSearch}
+                onNodeSelect={handleSearchNodeSelect}
+              />
+            )}
           />
         )}
 
@@ -382,8 +403,6 @@ export default function GraphExplorer({
           </button>
         </div>
       )}
-      <ReplayButton onReplay={dripFeed.replayRecording} disabled={dripFeed.isReplaying} />
-
       <OperationsBar
         status={stream.status}
         operations={stream.operations}
@@ -394,21 +413,13 @@ export default function GraphExplorer({
         dripInterval={dripFeed.dripInterval}
         onDripIntervalChange={dripFeed.setDripInterval}
         onOperationClick={handleOperationClick}
-      />
-
-      <SearchBar
-        nodes={nodes}
-        onSearch={interaction.handleSearch}
-        onNodeSelect={(id) => {
-          const cy = cytoscape.cy.current;
-          if (cy) {
-            const node = cy.getElementById(id);
-            if (node.length) {
-              interaction.handleNodeClick(node.data());
-              cy.animate({ center: { eles: node }, duration: 300 });
-            }
-          }
-        }}
+        replayControl={(
+          <ReplayButton
+            onReplay={dripFeed.replayRecording}
+            disabled={dripFeed.isReplaying}
+            floating={false}
+          />
+        )}
       />
 
       {interaction.pathMode && (

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { getLastRecording } from '../core/eventStore';
 
-export default function ReplayButton({ onReplay, disabled }) {
+export default function ReplayButton({ onReplay, disabled, className = '', floating = true }) {
   const [hasRecording, setHasRecording] = useState(null); // null = unknown, true/false after check
 
   const handleClick = useCallback(async () => {
@@ -16,7 +16,7 @@ export default function ReplayButton({ onReplay, disabled }) {
   }, [onReplay]);
 
   return (
-    <div className="absolute bottom-2 right-4 z-40">
+    <div className={floating ? 'absolute bottom-2 right-4 z-40' : className}>
       <button
         onClick={handleClick}
         disabled={disabled}

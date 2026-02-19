@@ -8,7 +8,7 @@
  */
 export function createSDKAdapter(client) {
   return {
-    getFullGraph: (limit = 5000) =>
+    getFullGraph: (limit) =>
       client.graph.getFullGraph(limit),
 
     getEdgesBulk: (nodeIds) =>

@@ -30,7 +30,18 @@ function formatTime(timestamp) {
   }
 }
 
-export default function OperationsBar({ status, operations, opsPerSecond, isPaused, onPause, onResume, onOperationClick, dripInterval, onDripIntervalChange }) {
+export default function OperationsBar({
+  status,
+  operations,
+  opsPerSecond,
+  isPaused,
+  onPause,
+  onResume,
+  onOperationClick,
+  dripInterval,
+  onDripIntervalChange,
+  replayControl,
+}) {
   const tickerRef = useRef(null);
   const [expandedRows, setExpandedRows] = useState(1); // 1-3 rows
 
@@ -159,6 +170,15 @@ export default function OperationsBar({ status, operations, opsPerSecond, isPaus
           );
         })}
       </div>
+
+      {replayControl ? (
+        <>
+          <div className="w-px bg-slate-700 shrink-0 my-1" />
+          <div className="flex items-center shrink-0 py-1">
+            {replayControl}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

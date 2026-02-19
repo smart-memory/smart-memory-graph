@@ -88,10 +88,10 @@ export default function SearchBar({ nodes, onSearch, onNodeSelect }) {
   }, []);
 
   return (
-    <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-4">
+    <div className="w-full">
       {/* Results dropdown (above the search bar) */}
       {isFocused && results.length > 0 && (
-        <div className="mb-2 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+        <div className="mb-2 bg-slate-900 border border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">
           {results.map((r) => (
             <button
               key={r.id}
@@ -126,7 +126,7 @@ export default function SearchBar({ nodes, onSearch, onNodeSelect }) {
           onFocus={() => setIsFocused(true)}
           onBlur={() => setTimeout(() => setIsFocused(false), 200)}
           placeholder="Search nodes... (Cmd+K)"
-          className="w-full bg-slate-800/95 backdrop-blur border border-slate-600 rounded-lg pl-10 pr-16 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-2xl"
+          className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-16 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
         <div className="absolute inset-y-0 right-2 flex items-center gap-1">
           {query && (
@@ -146,7 +146,7 @@ export default function SearchBar({ nodes, onSearch, onNodeSelect }) {
 
       {/* Result count */}
       {query && (
-        <div className="text-center mt-1 text-xs text-slate-500">
+        <div className="mt-1 text-xs text-slate-500">
           {results.length} {results.length === 1 ? 'match' : 'matches'}
         </div>
       )}

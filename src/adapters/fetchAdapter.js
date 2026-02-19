@@ -23,7 +23,8 @@ export function createFetchAdapter({ apiUrl, getToken, getTeamId }) {
   }
 
   return {
-    getFullGraph: (limit = 5000) => request('GET', `/memory/graph/full?limit=${limit}`),
+    // No client-side default cap; backend applies the authoritative limit.
+    getFullGraph: (limit) => request('GET', limit == null ? '/memory/graph/full' : `/memory/graph/full?limit=${encodeURIComponent(limit)}`),
     getEdgesBulk: (nodeIds) => request('POST', '/memory/graph/edges', { node_ids: nodeIds }),
     getGroundingStatus: (id) => request('GET', `/memory/graph/nodes/${encodeURIComponent(id)}/grounding`),
     updateEntityNode: (id, updates) => request('PATCH', `/memory/graph/nodes/${encodeURIComponent(id)}`, updates),
