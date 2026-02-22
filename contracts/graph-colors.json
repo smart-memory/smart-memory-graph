@@ -1,0 +1,37 @@
+{
+  "_source": "contracts/graph-colors.json",
+  "_description": "Canonical node colors for all UIs. Memory types use warm colors, entity types use cool colors.",
+  "memoryTypes": {
+    "semantic":    "#f59e0b",
+    "episodic":    "#f97316",
+    "procedural":  "#ef4444",
+    "working":     "#fb923c",
+    "zettel":      "#eab308",
+    "decision":    "#8b5cf6",
+    "reasoning":   "#6366f1",
+    "opinion":     "#ec4899",
+    "observation": "#06b6d4",
+    "code":        "#a78bfa"
+  },
+  "entityTypes": {
+    "concept":      "#3b82f6",
+    "person":       "#f472b6",
+    "organization": "#a855f7",
+    "location":     "#10b981",
+    "event":        "#6366f1",
+    "tool":         "#06b6d4",
+    "skill":        "#14b8a6",
+    "technology":   "#0ea5e9",
+    "temporal":     "#d946ef",
+    "activity":     "#84cc16",
+    "category":     "#8b5cf6",
+    "work_of_art":  "#d946ef",
+    "product":      "#22d3ee",
+    "document":     "#a3e635"
+  },
+  "special": {
+    "grounding":  "#9ca3af",
+    "default":    "#94a3b8",
+    "memory":     "#f59e0b"
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "_source": "smart-memory-graph",
+  "_roadmap": "ROADMAP.md → VIS-ANNO-1",
+  "_version": "1.0.0",
+  "_description": "Canonical annotation schema for graph visualization. Defines annotation kinds, visual channel mappings, precedence, and legend metadata.",
+
+  "annotationKinds": {
+    "diff": {
+      "description": "A/B comparison annotations",
+      "values": ["only_a", "only_b", "common", "modified"],
+      "channels": ["fill", "border"],
+      "labels": {
+        "only_a": "Only in A",
+        "only_b": "Only in B",
+        "common": "In both",
+        "modified": "Modified"
+      }
+    },
+    "provenance": {
+      "description": "Origin of the node/edge",
+      "values": ["extractor", "evolver", "manual", "grounding"],
+      "channels": ["fill", "opacity"],
+      "labels": {
+        "extractor": "Extracted",
+        "evolver": "Evolved",
+        "manual": "Manual",
+        "grounding": "Grounded"
+      }
+    },
+    "confidence": {
+      "description": "Confidence level buckets",
+      "values": ["high", "medium", "low", "unscored"],
+      "channels": ["fill", "opacity"],
+      "labels": {
+        "high": "High confidence",
+        "medium": "Medium confidence",
+        "low": "Low confidence",
+        "unscored": "Unscored"
+      }
+    },
+    "ontology_status": {
+      "description": "Ontology type governance status",
+      "values": ["confirmed", "provisional", "seed", "unknown"],
+      "channels": ["fill", "border", "badge"],
+      "labels": {
+        "confirmed": "Confirmed type",
+        "provisional": "Provisional type",
+        "seed": "Seed type",
+        "unknown": "Unknown type"
+      }
+    },
+    "pipeline_stage": {
+      "description": "Pipeline stage that created or last modified the element",
+      "values": ["classify", "extract", "store", "link", "enrich", "ground", "evolve"],
+      "channels": ["fill", "opacity"],
+      "labels": {
+        "classify": "Classify",
+        "extract": "Extract",
+        "store": "Store",
+        "link": "Link",
+        "enrich": "Enrich",
+        "ground": "Ground",
+        "evolve": "Evolve"
+      }
+    },
+    "search_match": {
+      "description": "Search result relevance — channel-locked to overlay, does not compete in precedence",
+      "values": ["exact", "partial", "none"],
+      "channels": ["overlay"],
+      "channelLocked": true,
+      "labels": {
+        "exact": "Exact match",
+        "partial": "Partial match",
+        "none": "No match"
+      }
+    }
+  },
+
+  "colors": {
+    "diff": {
+      "only_a": "#ef4444",
+      "only_b": "#22c55e",
+      "common": "#6b7280",
+      "modified": "#f59e0b"
+    },
+    "provenance": {
+      "extractor": "#06b6d4",
+      "evolver": "#a855f7",
+      "manual": "#3b82f6",
+      "grounding": "#9ca3af"
+    },
+    "confidence": {
+      "high": "#22c55e",
+      "medium": "#f59e0b",
+      "low": "#ef4444",
+      "unscored": "#6b7280"
+    },
+    "ontology_status": {
+      "confirmed": "#3b82f6",
+      "provisional": "#f59e0b",
+      "seed": "#9ca3af",
+      "unknown": "#ef4444"
+    },
+    "pipeline_stage": {
+      "classify": "#8b5cf6",
+      "extract": "#06b6d4",
+      "store": "#f59e0b",
+      "link": "#3b82f6",
+      "enrich": "#22c55e",
+      "ground": "#9ca3af",
+      "evolve": "#a855f7"
+    },
+    "search_match": {
+      "exact": { "color": "#fbbf24", "opacity": 0.3, "padding": 6 },
+      "partial": { "color": "#fcd34d", "opacity": 0.15, "padding": 4 },
+      "none": { "color": "transparent", "opacity": 0, "padding": 0 }
+    }
+  },
+
+  "borders": {
+    "diff": {
+      "only_a": { "style": "dashed", "color": "#ef4444", "width": 2 },
+      "only_b": { "style": "solid", "color": "#22c55e", "width": 2 },
+      "common": { "style": "solid", "color": "#6b7280", "width": 0 },
+      "modified": { "style": "dotted", "color": "#f59e0b", "width": 2 }
+    },
+    "ontology_status": {
+      "confirmed": { "style": "solid", "color": "#3b82f6", "width": 2 },
+      "provisional": { "style": "dashed", "color": "#f59e0b", "width": 2 },
+      "seed": { "style": "dotted", "color": "#9ca3af", "width": 1 },
+      "unknown": { "style": "dashed", "color": "#ef4444", "width": 1 }
+    }
+  },
+
+  "visualChannels": ["fill", "border", "badge", "glyph", "opacity", "pattern", "overlay"],
+
+  "defaultPrecedence": ["diff", "ontology_status", "confidence", "provenance", "pipeline_stage"],
+
+  "channelLockedKinds": {
+    "search_match": "overlay"
+  },
+
+  "annotationScopes": ["session", "derived", "persisted"],
+
+  "legendItem": {
+    "kind": { "type": "string", "description": "Annotation kind (e.g., 'diff')" },
+    "key": { "type": "string", "description": "Kind-specific value (e.g., 'only_a')" },
+    "label": { "type": "string", "description": "Human-readable label" },
+    "color": { "type": "string", "description": "Hex color for swatch" },
+    "count": { "type": "number", "description": "Number of elements with this annotation" },
+    "styleToken": { "type": "string", "description": "Channel-scoped Cytoscape class (e.g., 'anno-fill-diff-only_a')" }
+  },
+
+  "classPrefix": "anno-",
+  "classFormat": "anno-{channel}-{kind}-{value}"
+}
