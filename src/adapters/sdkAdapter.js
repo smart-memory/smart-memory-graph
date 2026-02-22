@@ -50,6 +50,9 @@ export function createSDKAdapter(client) {
     listMemories: (limit = 2000, offset = 0) =>
       client.memories.list({ limit, offset }),
 
+    deleteNode: (id) =>
+      client.memories.delete(id),
+
     getAuthToken: () =>
       client.auth.tokenManager.getAccessToken(),
   };

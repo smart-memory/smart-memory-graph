@@ -160,6 +160,15 @@ export default function GraphExplorer({
     incrementStats,
     layout: interaction.layout,
     stream,
+    onGroundingFlash: (nodeId) => {
+      const cy = cytoscape.cy?.current;
+      if (!cy) return;
+      const node = cy.getElementById(nodeId);
+      if (node?.length) {
+        node.addClass('grounding-flash');
+        setTimeout(() => node.removeClass('grounding-flash'), 2500);
+      }
+    },
   });
   dripFeedRef.current = dripFeed;
 
@@ -171,8 +180,8 @@ export default function GraphExplorer({
         ...nodes.map(graphNodeToCyElement),
         ...edges.map(graphEdgeToCyElement),
       ];
-      cytoscape.setElements(cyElements);
-      cytoscape.runLayout(interaction.layout);
+      const { isInitial } = cytoscape.mergeElements(cyElements);
+      if (isInitial) cytoscape.runLayout(interaction.layout);
 
       // Replay any WS events that arrived during the API fetch
       const pending = stream.drainPending();
@@ -183,11 +192,11 @@ export default function GraphExplorer({
         cytoscape.addElements(pendingCyEls);
       }
 
-      // Safety net: if cy is empty after setElements, retry once
+      // Safety net: if cy is empty after merge, retry once with full layout
       const retryTimer = setTimeout(() => {
         const cy = cytoscape.cy.current;
         if (cy && cy.nodes().length === 0 && nodes.length > 0) {
-          cytoscape.setElements(cyElements);
+          cytoscape.mergeElements(cyElements);
           cytoscape.runLayout(interaction.layout);
         }
       }, 300);
@@ -214,6 +223,39 @@ export default function GraphExplorer({
       cytoscape.clearAnnotations();
     }
   }, [annotations, cytoscape.ready, nodes, edges]);
+
+  // Delete selected nodes — calls backend for memory nodes, removes all from graph
+  const handleDeleteSelected = useCallback(async () => {
+    const ids = [...cytoscape.selectedNodeIds];
+    if (ids.length === 0) return;
+    const cy = cytoscape.cy.current;
+    await Promise.allSettled(
+      ids.map(async (id) => {
+        const node = cy?.getElementById(id);
+        const category = node?.data('category');
+        if (adapter && category === 'memory') {
+          try { await adapter.deleteNode(id); } catch { /* best effort */ }
+        }
+      })
+    );
+    cytoscape.removeNodes(ids);
+  }, [adapter, cytoscape]);
+
+  // Keyboard shortcuts: Delete/Backspace removes selection, Cmd/Ctrl+A selects all
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const active = document.activeElement?.tagName;
+      if (['INPUT', 'TEXTAREA'].includes(active)) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        handleDeleteSelected();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+        e.preventDefault();
+        cytoscape.selectAll();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleDeleteSelected, cytoscape]);
 
   // Operations bar click handler — scrub to event state
   const handleOperationClick = useCallback((op) => {
@@ -316,6 +358,8 @@ export default function GraphExplorer({
         onToggleFilters={() => setFilterPanelOpen((p) => !p)}
         onPathMode={interaction.handlePathMode}
         pathMode={interaction.pathMode}
+        selectionMode={cytoscape.selectionMode}
+        onSelectionModeChange={cytoscape.setSelectionMode}
         stats={stats}
         cy={cytoscape.cy}
         onCopyLink={interaction.handleCopyLink}
@@ -403,6 +447,25 @@ export default function GraphExplorer({
           </button>
         </div>
       )}
+      {cytoscape.selectedNodeIds.size > 0 && (
+        <div className="absolute bottom-16 right-4 z-50 flex items-center gap-2 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 shadow-lg">
+          <span className="text-slate-300 text-xs">{cytoscape.selectedNodeIds.size} selected</span>
+          <button
+            type="button"
+            onClick={handleDeleteSelected}
+            className="text-red-400 hover:text-red-300 text-xs font-medium transition-colors"
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => cytoscape.cy.current?.elements().unselect()}
+            className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <OperationsBar
         status={stream.status}
         operations={stream.operations}
@@ -426,6 +489,13 @@ export default function GraphExplorer({
         <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-amber-900/90 border border-amber-600 text-amber-200 px-4 py-2 rounded-lg text-sm z-50">
           Click the START node
           <button onClick={interaction.handlePathMode} className="ml-3 text-amber-400 hover:text-amber-300 underline">Cancel</button>
+        </div>
+      )}
+
+      {cytoscape.selectionMode && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-blue-900/90 border border-blue-600 text-blue-200 px-4 py-2 rounded-lg text-sm z-50">
+          Selection mode — click or drag to select nodes, then Delete to remove
+          <button onClick={() => cytoscape.setSelectionMode(false)} className="ml-3 text-blue-400 hover:text-blue-300 underline">Exit</button>
         </div>
       )}
 

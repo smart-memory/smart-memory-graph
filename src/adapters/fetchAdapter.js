@@ -8,14 +8,21 @@
  * @param {function(): string|null} config.getTeamId - Returns current team ID
  * @returns {GraphAPIAdapter}
  */
+/** Read a cookie value by name (browser-only, non-httpOnly). */
+function getCookie(name) {
+  const match = document.cookie.split('; ').find(c => c.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.split('=')[1]) : null;
+}
+
 export function createFetchAdapter({ apiUrl, getToken, getTeamId }) {
   async function request(method, path, body = null) {
     const headers = { 'Content-Type': 'application/json' };
     const token = getToken();
-    const team = getTeamId();
+    // Prefer explicit getTeamId(), fall back to sm_team_id cookie set by /auth/clerk/session
+    const team = getTeamId() || getCookie('sm_team_id');
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (team) headers['X-Team-Id'] = team;
-    const opts = { method, headers };
+    const opts = { method, headers, credentials: 'include' };
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(`${apiUrl}${path}`, opts);
     if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
@@ -38,6 +45,7 @@ export function createFetchAdapter({ apiUrl, getToken, getTeamId }) {
     getNeighbors: (id) => request('GET', `/memory/${encodeURIComponent(id)}/neighbors`),
     findPath: (startId, endId, maxHops = 5) => request('GET', `/memory/graph/path?start_id=${encodeURIComponent(startId)}&end_id=${encodeURIComponent(endId)}&max_hops=${maxHops}`),
     listMemories: (limit = 2000, offset = 0) => request('GET', `/memory/list?limit=${limit}&offset=${offset}`),
+    deleteNode: (id) => request('DELETE', `/memory/${encodeURIComponent(id)}`),
     getAuthToken: () => getToken(),
   };
 }

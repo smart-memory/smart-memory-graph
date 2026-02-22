@@ -12,6 +12,8 @@ export default function Toolbar({
   onToggleFilters,
   onPathMode,
   pathMode,
+  selectionMode,
+  onSelectionModeChange,
   stats,
   cy,
   onCopyLink,
@@ -134,6 +136,17 @@ export default function Toolbar({
         title="Find shortest path between two nodes"
       >
         Path
+      </button>
+
+      {/* Selection mode toggle */}
+      <button
+        onClick={() => onSelectionModeChange?.(!selectionMode)}
+        className={`px-3 py-1.5 text-sm rounded transition-colors ${
+          selectionMode ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-700'
+        }`}
+        title={selectionMode ? 'Selection mode — click nodes to select, drag to box-select. Click again to return to pan.' : 'Switch to selection mode to select and delete nodes'}
+      >
+        Select
       </button>
 
       {/* Export */}

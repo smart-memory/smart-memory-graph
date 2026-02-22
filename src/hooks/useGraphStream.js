@@ -160,6 +160,17 @@ export function useGraphStream(options = {}) {
     // Recording accumulation
     const batchKey = batch[0]?.traceId || `batch-${Date.now()}`;
     for (const op of batch) {
+      // Grounding flash: no graph element, but record nodeId so replay can trigger the flash animation.
+      // Only append to an existing group (requires at least one node_added to have opened it).
+      if (op.category === 'grounding_flash' && op.nodeId) {
+        const groupKey = op.traceId || batchKey;
+        const buf = recordingBufferRef.current;
+        if (buf[groupKey]) {
+          buf[groupKey].elements.push({ category: 'grounding_flash', nodeId: op.nodeId, timestamp: op.timestamp });
+        }
+        continue;
+      }
+
       const el = op.category === 'node_added' ? eventToGraphNode(op.meta?.data)
         : op.category === 'edge_added' ? eventToGraphEdge(op.meta?.data)
         : null;
@@ -216,7 +227,9 @@ export function useGraphStream(options = {}) {
     let unmounted = false;
     let hasConnectedOnce = false;
     let failedAttempts = 0;
-    const MAX_RETRIES = 3;
+    // Only retry when we've connected before (server was running but dropped).
+    // If we've never connected, one attempt is enough — server isn't running.
+    const MAX_INITIAL_RETRIES = 1;
 
     function connect() {
       if (unmounted) return;
@@ -265,7 +278,7 @@ export function useGraphStream(options = {}) {
         if (unmounted) return;
         setStatus('disconnected');
         failedAttempts++;
-        if (!hasConnectedOnce && failedAttempts >= MAX_RETRIES) return;
+        if (!hasConnectedOnce && failedAttempts >= MAX_INITIAL_RETRIES) return;
         scheduleReconnect();
       };
 

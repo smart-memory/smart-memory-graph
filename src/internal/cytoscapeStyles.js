@@ -145,16 +145,7 @@ export function getCytoscapeStyles() {
     },
   });
 
-  // Streaming glow — newly arrived edge
-  styles.push({
-    selector: 'edge.streaming-new',
-    style: {
-      width: 3,
-      'line-color': '#22d3ee',
-      opacity: 1,
-      'z-index': 1000,
-    },
-  });
+  // edge.streaming-new removed — edges use animateEdgePulse() (traveling dash) instead
 
   // Grounding flash — entity just linked to Wikipedia provenance
   styles.push({

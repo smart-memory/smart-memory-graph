@@ -51,6 +51,9 @@
  *
  * @property {function(): string|null} getAuthToken
  *   Get the current auth token (for WS auth).
+ *
+ * @property {function(string): Promise<void>} deleteNode
+ *   Delete a memory node and its graph data by item_id.
  */
 
 export {};

@@ -16,7 +16,7 @@ const GLOW_DURATION = 2500;
  * @param {string} options.layout - current layout name
  * @param {Object} options.stream - useGraphStream return value
  */
-export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream }) {
+export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream, onGroundingFlash }) {
   const [dripInterval, setDripInterval] = useState(() => {
     const stored = localStorage.getItem('graph:dripInterval');
     return stored ? Number(stored) : 200;
@@ -31,23 +31,11 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
   const userInteractedRef = useRef(false);
   const entityIndexRef = useRef(0);
   const relayoutTimerRef = useRef(null);
+  const panTimerRef = useRef(null);
   const dripTimersRef = useRef([]);
   const dripQueueRef = useRef([]);
-  const panTimerRef = useRef(null);
-
-  // Fit viewport after streaming goes quiet — no layout reshuffle, cola physics
-  // has already settled positions. Fires at 800ms so it catches the gap between
-  // passages without reshuffling the graph when the next passage starts.
-  const scheduleQuietLayout = useCallback(() => {
-    if (relayoutTimerRef.current) clearTimeout(relayoutTimerRef.current);
-    relayoutTimerRef.current = setTimeout(() => {
-      relayoutTimerRef.current = null;
-      if (!userInteractedRef.current) {
-        const cy = cytoscape.cy.current;
-        if (cy) cy.animate({ fit: { eles: getFitElements(cy), padding: getFitPadding(cy) } }, { duration: 400, easing: 'ease-in-out-sine' });
-      }
-    }, 800);
-  }, [cytoscape]);
+  // Entity nodes buffered until their connecting edge arrives — so node+edge appear together.
+  const pendingNodesRef = useRef(new Map());
 
   // Position a node during streaming: entity nodes born at parent position,
   // cola physics drifts them to their settled location (unfurling effect).
@@ -64,15 +52,106 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
         node.position({ x: parent.position().x, y: parent.position().y });
       }
     } else {
-      // Memory node: place along horizontal row
+      // Memory node: place along horizontal row at the centre of the *current viewport*
+      // (not cy.width()/2 which is a pixel dimension, not a graph coordinate).
+      const pan = cy.pan();
+      const zoom = cy.zoom();
+      const cx = (cy.width()  / 2 - pan.x) / zoom;
+      const cyy = (cy.height() / 2 - pan.y) / zoom;
       const memoryNodes = cy.nodes().filter(n => n.data('category') === 'memory');
       const count = memoryNodes.length;
-      const cx = cy.width() / 2;
-      const cyy = cy.height() / 2;
       node.position({ x: cx + (count - 1) * 200, y: cyy });
       entityIndexRef.current = 0;
     }
   }, []);
+
+  // Animate a single soft glowing orb traveling source → target along the edge.
+  // Ghost edge overlays the real edge (same bezier path) but is excluded from
+  // cola layout via the eles filter, preventing parallel-edge oscillation.
+  const animateEdgePulse = useCallback((edge) => {
+    const cy = edge.cy();
+    if (!cy) return;
+    const ghostId = `_pulse_${edge.id()}`;
+    if (cy.getElementById(ghostId).length > 0) return;
+
+    const ghost = cy.add({
+      group: 'edges',
+      data: { id: ghostId, source: edge.data('source'), target: edge.data('target'), _isPulse: true },
+    });
+
+    ghost.style({
+      'curve-style': 'bezier',
+      'line-style': 'dashed',
+      'line-dash-pattern': [10, 9999], // single dot, gap larger than any edge
+      'line-dash-offset': 0,
+      'line-cap': 'round',             // circular orb
+      'line-color': '#a5f3fc',         // sky-200 — soft glow
+      width: 7,
+      opacity: 0.85,
+      'target-arrow-shape': 'none',
+      label: '',
+      'z-index': 1002,
+    });
+
+    ghost.animate(
+      { style: { 'line-dash-offset': -10009, opacity: 0 } },
+      {
+        duration: dripIntervalRef.current,  // speed tracks the drip slider
+        easing: 'ease-in-out-sine',
+        complete: () => { if (ghost.inside()) cy.remove(ghost); },
+      }
+    );
+  }, []);
+
+  // Add a node to cy with its entry animation. Used for immediate nodes and
+  // for buffered nodes that are flushed when their edge arrives.
+  const addNodeAnimated = useCallback((cy, el, cyEl) => {
+    if (cy.getElementById(cyEl.data.id).length > 0) return;
+    filters.registerStreamedElements([el]);
+    try {
+      const added = cy.add(cyEl);
+      positionStreamedNode(cy, cyEl);
+      incrementStats([el], 0);
+      const targetW = added.style('width');
+      const targetH = added.style('height');
+      added.style({ width: 0, height: 0, opacity: 0 });
+      added.animate(
+        { style: { width: targetW, height: targetH, opacity: 1 } },
+        {
+          duration: 250,
+          easing: 'ease-out-cubic',
+          complete: () => {
+            added.addClass('streaming-new');
+            setTimeout(() => { if (added.inside()) added.removeClass('streaming-new'); }, GLOW_DURATION);
+          },
+        }
+      );
+    } catch { /* ignore */ }
+  }, [filters, incrementStats, positionStreamedNode]);
+
+  // Fit viewport after streaming goes quiet — no layout reshuffle, cola physics
+  // has already settled positions. Fires at 800ms so it catches the gap between
+  // passages without reshuffling the graph when the next passage starts.
+  // Also flushes any entity nodes that arrived without a matching edge.
+  const scheduleQuietLayout = useCallback(() => {
+    if (relayoutTimerRef.current) clearTimeout(relayoutTimerRef.current);
+    relayoutTimerRef.current = setTimeout(() => {
+      relayoutTimerRef.current = null;
+      const cy = cytoscape.cy.current;
+      if (!cy) return;
+      // Flush any nodes still buffered (their edge never arrived)
+      if (pendingNodesRef.current.size > 0) {
+        for (const { el, cyEl } of pendingNodesRef.current.values()) {
+          addNodeAnimated(cy, el, cyEl);
+        }
+        pendingNodesRef.current.clear();
+        cy.layout({ ...STREAMING_LAYOUT, eles: cy.elements().not('[_isPulse]') }).run();
+      }
+      if (!userInteractedRef.current) {
+        cy.animate({ fit: { eles: getFitElements(cy), padding: getFitPadding(cy) } }, { duration: 400, easing: 'ease-in-out-sine' });
+      }
+    }, 800);
+  }, [cytoscape, addNodeAnimated]);
 
   // Process next element from the drip queue
   const processNextDrip = useCallback(() => {
@@ -94,21 +173,26 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
       return;
     }
 
+    const isNode = !('source' in el);
+
+    // Non-memory nodes (entity, grounding): buffer until their edge arrives so
+    // node and edge appear together. Memory nodes (no parentId) appear immediately.
+    if (isNode && el.parentId) {
+      pendingNodesRef.current.set(cyEl.data.id, { el, cyEl });
+      // Skip to the next drip immediately — don't waste a drip interval on an invisible op.
+      const timer = setTimeout(processNextDrip, 0);
+      dripTimersRef.current.push(timer);
+      return;
+    }
+
     // Register with filter panel
     filters.registerStreamedElements([el]);
     try {
-      const isNode = !('source' in el);
-      const added = cy.add(cyEl);
-      positionStreamedNode(cy, cyEl);
-      if (isNode) incrementStats([el], 0);
-      else incrementStats(0, 1);
-
-      // ── Entry animation → glow → physics (sequenced via complete callback) ──
-      // streaming-new class and cola physics are deferred until the entry
-      // animation finishes so that:
-      //   (a) the edge.streaming-new stylesheet (opacity:1) doesn't fight the fade-in
-      //   (b) cola doesn't drift the node while it's still invisible at spawn position
       if (isNode) {
+        // Memory / root node — appear immediately
+        const added = cy.add(cyEl);
+        positionStreamedNode(cy, cyEl);
+        incrementStats([el], 0);
         const targetW = added.style('width');
         const targetH = added.style('height');
         added.style({ width: 0, height: 0, opacity: 0 });
@@ -120,11 +204,22 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
             complete: () => {
               added.addClass('streaming-new');
               setTimeout(() => { if (added.inside()) added.removeClass('streaming-new'); }, GLOW_DURATION);
-              cy.layout(STREAMING_LAYOUT).run();
+              cy.layout({ ...STREAMING_LAYOUT, eles: cy.elements().not('[_isPulse]') }).run();
             },
           }
         );
       } else {
+        // Edge: flush any buffered endpoint nodes first so they appear with the edge
+        for (const nodeId of [el.source, el.target]) {
+          const buffered = pendingNodesRef.current.get(nodeId);
+          if (buffered) {
+            pendingNodesRef.current.delete(nodeId);
+            addNodeAnimated(cy, buffered.el, buffered.cyEl);
+          }
+        }
+        // Add the edge
+        incrementStats(0, 1);
+        const added = cy.add(cyEl);
         added.style({ opacity: 0 });
         added.animate(
           { style: { opacity: 1 } },
@@ -132,9 +227,8 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
             duration: 150,
             easing: 'ease-out-sine',
             complete: () => {
-              added.addClass('streaming-new');
-              setTimeout(() => { if (added.inside()) added.removeClass('streaming-new'); }, GLOW_DURATION);
-              cy.layout(STREAMING_LAYOUT).run();
+              animateEdgePulse(added);
+              cy.layout({ ...STREAMING_LAYOUT, eles: cy.elements().not('[_isPulse]') }).run();
             },
           }
         );
@@ -144,22 +238,20 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
       // Edge endpoint missing
     }
 
-    // ── Throttled fit during streaming ───────────────────────────────────
-    // Smoothly fits all elements into view as nodes and edges appear.
-    // Fires for both nodes and edges, throttled to at most once per 400ms
-    // so it doesn't fight the cola layout physics running in parallel.
+    // Throttled fit during streaming — keeps viewport tracking new nodes.
+    // Fires at most every 400ms; skipped if user has panned/zoomed manually.
     if (!userInteractedRef.current && !panTimerRef.current) {
       panTimerRef.current = setTimeout(() => {
         panTimerRef.current = null;
         if (!userInteractedRef.current) {
-          cy.animate(
+          const cy = cytoscape.cy.current;
+          if (cy) cy.animate(
             { fit: { eles: getFitElements(cy), padding: getFitPadding(cy) } },
             { duration: 350, easing: 'ease-in-out-sine' }
           );
         }
       }, 400);
     }
-    // ────────────────────────────────────────────────────────────────────
 
     if (queue.length > 0) {
       const timer = setTimeout(processNextDrip, dripIntervalRef.current);
@@ -167,7 +259,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     } else {
       scheduleQuietLayout();
     }
-  }, [cytoscape, filters, incrementStats, positionStreamedNode, scheduleQuietLayout]);
+  }, [cytoscape, filters, incrementStats, positionStreamedNode, scheduleQuietLayout, addNodeAnimated, animateEdgePulse]);
 
   // Enqueue a GraphNode or GraphEdge for drip-feed animation
   const enqueue = useCallback((el) => {
@@ -206,6 +298,11 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     const allItems = [];
 
     for (const evt of recording.events) {
+      // Grounding flash: no element, just a nodeId marker — keep in order for replay timing
+      if (evt.category === 'grounding_flash' && evt.nodeId) {
+        allItems.push({ _groundingFlash: true, nodeId: evt.nodeId });
+        continue;
+      }
       const el = evt.element;
       if (!el) continue;
       if (!('source' in el)) {
@@ -238,22 +335,68 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
       return;
     }
 
+    const replayPendingNodes = new Map();
+
     allItems.forEach((el, i) => {
       const timer = setTimeout(() => {
+        // Grounding flash marker — no graph element, just trigger the node flash animation
+        if (el._groundingFlash) {
+          if (onGroundingFlash) onGroundingFlash(el.nodeId);
+          return;
+        }
+
         const cy = cytoscape.cy.current;
         if (!cy) return;
         const cyEl = ('source' in el) ? graphEdgeToCyElement(el) : graphNodeToCyElement(el);
         if (cy.getElementById(cyEl.data.id).length > 0) return;
+
+        const isNode = !('source' in el);
+
+        // Non-memory nodes: buffer until their edge arrives
+        if (isNode && el.parentId) {
+          replayPendingNodes.set(cyEl.data.id, { el, cyEl });
+          return;
+        }
+
         filters.registerStreamedElements([el]);
         try {
-          const isNode = !('source' in el);
-          const added = cy.add(cyEl);
-          positionStreamedNode(cy, cyEl);
-          if (isNode) incrementStats([el], 0);
-          else incrementStats(0, 1);
-
-          // ── Entry animation → glow → physics (sequenced via complete) ──
-          if (isNode) {
+          if (!isNode) {
+            // Flush buffered endpoint nodes so they appear with the edge
+            for (const nodeId of [el.source, el.target]) {
+              const buffered = replayPendingNodes.get(nodeId);
+              if (buffered) {
+                replayPendingNodes.delete(nodeId);
+                addNodeAnimated(cy, buffered.el, buffered.cyEl);
+                // Push node_added breadcrumb for the flushed entity node
+                stream?.pushOperation?.({
+                  id: `replay-node-${i}-${buffered.el.id}`,
+                  timestamp: new Date().toISOString(),
+                  category: 'node_added',
+                  label: `Node "${buffered.el.label || buffered.el.id}"`,
+                  nodeId: buffered.el.id,
+                  meta: { data: buffered.el },
+                });
+              }
+            }
+            incrementStats(0, 1);
+            const added = cy.add(cyEl);
+            added.style({ opacity: 0 });
+            added.animate(
+              { style: { opacity: 1 } },
+              {
+                duration: 150,
+                easing: 'ease-out-sine',
+                complete: () => {
+                  animateEdgePulse(added);
+                  cy.layout({ ...STREAMING_LAYOUT, eles: cy.elements().not('[_isPulse]') }).run();
+                },
+              }
+            );
+          } else {
+            // Memory node — appear immediately
+            const added = cy.add(cyEl);
+            positionStreamedNode(cy, cyEl);
+            incrementStats([el], 0);
             const targetW = added.style('width');
             const targetH = added.style('height');
             added.style({ width: 0, height: 0, opacity: 0 });
@@ -265,26 +408,11 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
                 complete: () => {
                   added.addClass('streaming-new');
                   setTimeout(() => { if (added.inside()) added.removeClass('streaming-new'); }, GLOW_DURATION);
-                  cy.layout(STREAMING_LAYOUT).run();
-                },
-              }
-            );
-          } else {
-            added.style({ opacity: 0 });
-            added.animate(
-              { style: { opacity: 1 } },
-              {
-                duration: 150,
-                easing: 'ease-out-sine',
-                complete: () => {
-                  added.addClass('streaming-new');
-                  setTimeout(() => { if (added.inside()) added.removeClass('streaming-new'); }, GLOW_DURATION);
-                  cy.layout(STREAMING_LAYOUT).run();
+                  cy.layout({ ...STREAMING_LAYOUT, eles: cy.elements().not('[_isPulse]') }).run();
                 },
               }
             );
           }
-          // ──────────────────────────────────────────────────────────────
 
           // Push breadcrumb
           const category = !('source' in el) ? 'node_added' : 'edge_added';
@@ -309,7 +437,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
       }, i * dripIntervalRef.current);
       dripTimersRef.current.push(timer);
     });
-  }, [cytoscape, incrementStats, positionStreamedNode, scheduleQuietLayout, filters, stream]);
+  }, [cytoscape, incrementStats, positionStreamedNode, scheduleQuietLayout, filters, stream, addNodeAnimated, animateEdgePulse, onGroundingFlash]);
 
   // Detect manual zoom/pan
   useEffect(() => {
@@ -329,7 +457,11 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     dripTimersRef.current.forEach(clearTimeout);
     if (relayoutTimerRef.current) clearTimeout(relayoutTimerRef.current);
     if (panTimerRef.current) clearTimeout(panTimerRef.current);
-  }, []);
+
+    // Remove any ghost pulse edges still in flight
+    const cy = cytoscape.cy.current;
+    if (cy) cy.remove('[_isPulse]');
+  }, [cytoscape.cy]);
 
   // Reset helpers
   const resetDrip = useCallback(() => {
@@ -338,6 +470,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     dripQueueRef.current = [];
     entityIndexRef.current = 0;
     userInteractedRef.current = false;
+    pendingNodesRef.current.clear();
     if (relayoutTimerRef.current) { clearTimeout(relayoutTimerRef.current); relayoutTimerRef.current = null; }
     if (panTimerRef.current) { clearTimeout(panTimerRef.current); panTimerRef.current = null; }
   }, []);

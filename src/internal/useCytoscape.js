@@ -61,6 +61,10 @@ export function useCytoscape(containerRef) {
   const autoFitRef = useRef(true);
   useEffect(() => { autoFitRef.current = autoFit; }, [autoFit]);
 
+  const [selectedNodeIds, setSelectedNodeIds] = useState(new Set());
+  const [selectionMode, setSelectionModeState] = useState(false);
+  const selectionModeRef = useRef(false);
+
   // Stable ref for event callbacks
   const onNodeClickRef = useRef(null);
   const onNodeDblClickRef = useRef(null);
@@ -97,9 +101,10 @@ export function useCytoscape(containerRef) {
 
     cy.on('tap', 'node', (evt) => {
       const node = evt.target;
-      if (node !== cy && node.isNode() && onNodeClickRef.current) {
-        onNodeClickRef.current(node.data());
-      }
+      if (!node.isNode() || node === cy) return;
+      // In selection mode, tap toggles selection only — don't open detail panel.
+      if (selectionModeRef.current) return;
+      if (onNodeClickRef.current) onNodeClickRef.current(node.data());
     });
     cy.on('dbltap', 'node', (evt) => {
       const node = evt.target;
@@ -124,6 +129,12 @@ export function useCytoscape(containerRef) {
         onBgClickRef.current?.();
       }
     });
+
+    // Track selected nodes for multi-select delete
+    const syncSelection = () => {
+      setSelectedNodeIds(new Set(cy.nodes(':selected').map((n) => n.id())));
+    };
+    cy.on('select unselect', 'node', syncSelection);
 
     const resizeObserver = new ResizeObserver(() => {
       cy.resize();
@@ -153,6 +164,41 @@ export function useCytoscape(containerRef) {
     });
   }, []);
 
+  /**
+   * Diff-merge elements into the graph, preserving positions of existing nodes.
+   * Returns { isInitial: true } when the graph was empty before (full layout needed).
+   * On refresh (graph already populated), positions are restored and no layout is run.
+   */
+  const mergeElements = useCallback((elements) => {
+    const cy = cyRef.current;
+    if (!cy) return { isInitial: true };
+
+    const existingIds = new Set(cy.nodes().map((n) => n.id()));
+    const isInitial = existingIds.size === 0;
+
+    // Snapshot positions of every existing node before replace.
+    const savedPositions = {};
+    if (!isInitial) {
+      cy.nodes().forEach((n) => {
+        savedPositions[n.id()] = { ...n.position() };
+      });
+    }
+
+    cy.batch(() => {
+      cy.elements().remove();
+      cy.add(elements);
+      // Restore saved positions for nodes that survived the refresh.
+      if (!isInitial) {
+        cy.nodes().forEach((n) => {
+          const pos = savedPositions[n.id()];
+          if (pos) n.position(pos);
+        });
+      }
+    });
+
+    return { isInitial };
+  }, []);
+
   const firstLayoutRef = useRef(true);
 
   const runLayout = useCallback((layoutName = 'cose-bilkent', options = {}) => {
@@ -173,7 +219,7 @@ export function useCytoscape(containerRef) {
         edgeElasticity: 0.45,
         nestingFactor: 0.1,
         gravity: 0.25,
-        numIter: 2500,
+        numIter: 500,
         tile: true,
         randomize: shouldAnimate,
       },
@@ -255,9 +301,8 @@ export function useCytoscape(containerRef) {
           node.removeClass('dimmed');
           return;
         }
-        const isTargetOfFiltered = targetsOfFilteredEdges.has(node.id());
         const hasVisibleEdge = nodesWithVisibleEdge.has(node.id());
-        if (isTargetOfFiltered && !hasVisibleEdge) {
+        if (!hasVisibleEdge) {
           node.addClass('dimmed');
         } else {
           node.removeClass('dimmed');
@@ -472,11 +517,51 @@ export function useCytoscape(containerRef) {
   const setOnNodeHoverOut = useCallback((fn) => { onNodeHoverOutRef.current = fn; }, []);
   const setOnBgClick = useCallback((fn) => { onBgClickRef.current = fn; }, []);
 
+  // Toggle pan/select mode. In select mode: box selection enabled, nodes non-grabbable,
+  // tap opens box-select instead of detail panel.
+  const setSelectionMode = useCallback((enabled) => {
+    selectionModeRef.current = enabled;
+    setSelectionModeState(enabled);
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.boxSelectionEnabled(enabled);
+    cy.userPanningEnabled(!enabled);
+    if (enabled) {
+      cy.nodes().ungrabify();
+    } else {
+      cy.nodes().grabify();
+      // Exit selection mode: clear selection highlights
+      cy.elements().unselect();
+      setSelectedNodeIds(new Set());
+    }
+  }, []);
+
+  // Select all visible (non-dimmed) nodes
+  const selectAll = useCallback(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.nodes().not('.dimmed').select();
+  }, []);
+
+  // Remove a set of nodes (and their edges) from the graph. Called after backend delete.
+  const removeNodes = useCallback((ids) => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      ids.forEach((id) => {
+        const el = cy.getElementById(id);
+        if (el.length) cy.remove(el.closedNeighborhood().filter((e) => e.isEdge()).union(el));
+      });
+    });
+    setSelectedNodeIds(new Set());
+  }, []);
+
   return {
     cy: cyRef,
     ready: cyReady,
     setContainerRef,
     setElements,
+    mergeElements,
     addElements,
     runLayout,
     zoomIn,
@@ -498,5 +583,10 @@ export function useCytoscape(containerRef) {
     setOnBgClick,
     autoFit,
     setAutoFit,
+    selectedNodeIds,
+    removeNodes,
+    selectAll,
+    selectionMode,
+    setSelectionMode,
   };
 }
