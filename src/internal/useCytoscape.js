@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import cytoscape from 'cytoscape';
+import cola from 'cytoscape-cola';
 import coseBilkent from 'cytoscape-cose-bilkent';
 import dagre from 'cytoscape-dagre';
 import { getCytoscapeStyles } from './cytoscapeStyles';
@@ -8,10 +9,33 @@ import { ANNOTATION_PRECEDENCE, CHANNEL_LOCKED_KINDS } from '../core/graphColors
 // Register layout extensions once
 let registered = false;
 if (!registered) {
+  cytoscape.use(cola);
   cytoscape.use(coseBilkent);
   cytoscape.use(dagre);
   registered = true;
 }
+
+/**
+ * Layout config for the streaming/unfurling phase.
+ * Runs cola force simulation continuously so newly arrived nodes drift
+ * to their settled position while the stream is active.
+ * Called directly via cy.layout(STREAMING_LAYOUT).run() — NOT via runLayout(),
+ * which uses a layoutDefaults map and firstLayoutRef that would clobber this config.
+ */
+export const STREAMING_LAYOUT = {
+  name: 'cola',
+  animate: true,
+  animationDuration: 150,
+  refresh: 2,
+  maxSimulationTime: 1500,
+  ungrabifyWhileSimulating: false,
+  fit: false,
+  padding: 40,
+  nodeSpacing: () => 20,
+  edgeLength: 120,
+  randomize: false,
+  avoidOverlap: true,
+};
 
 /**
  * Get the elements that should define the fit bounds: visible AND not dimmed.
