@@ -228,12 +228,20 @@ export default function Toolbar({
       {/* Fullscreen */}
       <button
         onClick={onToggleFullscreen}
-        className={`px-3 py-1.5 text-sm rounded transition-colors ${
-          isFullscreen ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-700'
-        }`}
-        title={isFullscreen ? 'Exit fullscreen (Esc or Ctrl)' : 'Enter fullscreen'}
+        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+        title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
       >
-        {isFullscreen ? 'Exit Full' : 'Full'}
+        {isFullscreen ? (
+          /* compress / exit-fullscreen icon */
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4m0 5H4m0 0l5-5M15 9h5m-5 0V4m0 5l5-5M9 15v5m0-5H4m0 0l5 5M15 15h5m-5 0v5m0-5l5 5" />
+          </svg>
+        ) : (
+          /* expand / enter-fullscreen icon */
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5" />
+          </svg>
+        )}
       </button>
 
       {rightActions ? <div className="flex items-center gap-1">{rightActions}</div> : null}

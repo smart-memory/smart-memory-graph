@@ -107,10 +107,27 @@ export default function GraphExplorer({
 
   const filters = useGraphFilters(nodes, edges);
   const containerRef = useRef(null);
+  const rootRef = useRef(null);
   const cytoscape = useCytoscape(containerRef);
   const { urlState, saveToUrl, getShareableUrl } = useUrlState();
 
   const [filterPanelOpen, setFilterPanelOpen] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Sync isFullscreen state when user exits via Esc or browser chrome
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      rootRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  }, []);
 
   // Refs to break forward-reference between stream ↔ dripFeed
   const dripFeedRef = useRef(null);
@@ -338,7 +355,7 @@ export default function GraphExplorer({
   }
 
   return (
-    <div className={`flex min-w-0 flex-col bg-slate-900 overflow-hidden ${className || 'h-full w-full'}`}>
+    <div ref={rootRef} className={`flex min-w-0 flex-col bg-slate-900 overflow-hidden ${className || 'h-full w-full'}`}>
       {loading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 pointer-events-none">
           <div className="text-center">
@@ -367,6 +384,8 @@ export default function GraphExplorer({
         timeTravelActive={interaction.timeTravelOpen || !!interaction.asOfTime}
         autoFit={cytoscape.autoFit}
         onAutoFitChange={cytoscape.setAutoFit}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
         rightActions={toolbarRightActions}
       />
 
