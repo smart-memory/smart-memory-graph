@@ -3,6 +3,18 @@
  * This is the ONE place where format conversion happens — enforced by the internal/ convention.
  */
 
+const ONE_DAY_MS = 86_400_000;
+
+/** Returns a temporal age bucket string based on absolute age from now. */
+function computeAgeBucket(createdAt) {
+  if (!createdAt) return null;
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  if (ageMs < ONE_DAY_MS) return 'fresh';
+  if (ageMs < 7 * ONE_DAY_MS) return 'recent';
+  if (ageMs < 30 * ONE_DAY_MS) return 'aging';
+  return 'old';
+}
+
 // GraphNode → Cytoscape node element
 export function graphNodeToCyElement(node) {
   return {
@@ -15,9 +27,12 @@ export function graphNodeToCyElement(node) {
       content: node.content || '',
       confidence: node.confidence,
       created_at: node.created_at,
+      age_bucket: computeAgeBucket(node.created_at),
       parentId: node.parentId || null,
       metadata: node.metadata,
+      grounded: node.grounded ? true : undefined,
     },
+    classes: node.grounded ? 'grounded' : undefined,
   };
 }
 

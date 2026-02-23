@@ -46,6 +46,7 @@ export function createFetchAdapter({ apiUrl, getToken, getTeamId }) {
     findPath: (startId, endId, maxHops = 5) => request('GET', `/memory/graph/path?start_id=${encodeURIComponent(startId)}&end_id=${encodeURIComponent(endId)}&max_hops=${maxHops}`),
     listMemories: (limit = 2000, offset = 0) => request('GET', `/memory/list?limit=${limit}&offset=${offset}`),
     deleteNode: (id) => request('DELETE', `/memory/${encodeURIComponent(id)}`),
+    deleteEntityNode: (id) => request('DELETE', `/memory/graph/nodes/${encodeURIComponent(id)}`),
     getAuthToken: () => getToken(),
   };
 }

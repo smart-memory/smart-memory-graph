@@ -22,6 +22,23 @@ export function getNodeColor(type, category) {
   return SPECIAL_COLORS.default;
 }
 
+/**
+ * Blend a hex color toward slate-400 (#94a3b8) by the given ratio.
+ * ratio=0 returns original color; ratio=1 returns full grey.
+ * Used for temporal decay desaturation in graph styles.
+ */
+export function desaturateColor(hex, ratio) {
+  if (!hex || !hex.startsWith('#') || hex.length < 7) return hex;
+  const grey = [0x94, 0xa3, 0xb8];
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.round(r + (grey[0] - r) * ratio);
+  const ng = Math.round(g + (grey[1] - g) * ratio);
+  const nb = Math.round(b + (grey[2] - b) * ratio);
+  return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
+}
+
 export function getNodeSize(category) {
   return NODE_SIZES[category] || NODE_SIZES.entity;
 }

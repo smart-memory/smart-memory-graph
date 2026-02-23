@@ -129,6 +129,16 @@ export default function GraphExplorer({
     }
   }, []);
 
+  // Current pipeline stage indicator (live + replay)
+  const [currentStage, setCurrentStage] = useState(null);
+  const stageDismissRef = useRef(null);
+  const handleStageChange = useCallback(({ stage, durationMs }) => {
+    if (!stage) return;
+    setCurrentStage({ name: stage, durationMs: durationMs ?? null });
+    if (stageDismissRef.current) clearTimeout(stageDismissRef.current);
+    stageDismissRef.current = setTimeout(() => setCurrentStage(null), 2000);
+  }, []);
+
   // Refs to break forward-reference between stream ↔ dripFeed
   const dripFeedRef = useRef(null);
   const streamRef = useRef(null);
@@ -149,6 +159,7 @@ export default function GraphExplorer({
         setTimeout(() => node.removeClass('grounding-flash'), 2500);
       }
     },
+    onPipelineProgress: handleStageChange,
     onGraphCleared: () => {
       dripFeedRef.current?.resetDrip();
       streamRef.current?.clearOperations();
@@ -182,10 +193,13 @@ export default function GraphExplorer({
       if (!cy) return;
       const node = cy.getElementById(nodeId);
       if (node?.length) {
+        node.addClass('grounded'); // permanent — node now has Wikipedia provenance
+        node.data('grounded', true); // data backup for node[grounded] selector
         node.addClass('grounding-flash');
         setTimeout(() => node.removeClass('grounding-flash'), 2500);
       }
     },
+    onStageChange: handleStageChange,
   });
   dripFeedRef.current = dripFeed;
 
@@ -241,18 +255,23 @@ export default function GraphExplorer({
     }
   }, [annotations, cytoscape.ready, nodes, edges]);
 
-  // Delete selected nodes — calls backend for memory nodes, removes all from graph
+  // Delete selected nodes — calls backend for all node categories, removes all from graph
   const handleDeleteSelected = useCallback(async () => {
     const ids = [...cytoscape.selectedNodeIds];
     if (ids.length === 0) return;
     const cy = cytoscape.cy.current;
     await Promise.allSettled(
       ids.map(async (id) => {
+        if (!adapter) return;
         const node = cy?.getElementById(id);
         const category = node?.data('category');
-        if (adapter && category === 'memory') {
-          try { await adapter.deleteNode(id); } catch { /* best effort */ }
-        }
+        try {
+          if (category === 'memory') {
+            await adapter.deleteNode(id);
+          } else {
+            await adapter.deleteEntityNode(id);
+          }
+        } catch { /* best effort */ }
       })
     );
     cytoscape.removeNodes(ids);
@@ -446,6 +465,17 @@ export default function GraphExplorer({
       {interaction.asOfTime && !interaction.timeTravelLoading && (
         <div className="absolute top-16 right-4 bg-purple-900/80 border border-purple-600 text-purple-200 px-3 py-1.5 rounded-lg text-xs z-50">
           Viewing: {new Date(interaction.asOfTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </div>
+      )}
+
+      {/* Pipeline stage indicator — live ingestion + replay */}
+      {currentStage && (
+        <div className="absolute bottom-16 left-4 z-50 bg-slate-900/90 border border-yellow-700/60 text-yellow-300 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 pointer-events-none">
+          <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-pulse flex-shrink-0" />
+          {currentStage.name.replace(/_/g, ' ')}
+          {currentStage.durationMs != null && (
+            <span className="text-yellow-600 ml-0.5">{currentStage.durationMs}ms</span>
+          )}
         </div>
       )}
 

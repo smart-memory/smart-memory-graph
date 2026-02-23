@@ -45,7 +45,12 @@ export function useGraphStream(options = {}) {
   })();
 
   const [status, setStatus] = useState('disconnected');
-  const [operations, setOperations] = useState([]);
+  const [operations, setOperations] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('graph:operations');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [opsPerSecond, setOpsPerSecond] = useState(0);
   const isPausedRef = useRef(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -59,7 +64,7 @@ export function useGraphStream(options = {}) {
   const unmountedRef = useRef(false);
   const pendingElementsRef = useRef([]);
   const recordingBufferRef = useRef({});
-  const RECORDING_FLUSH_DELAY = 5000;
+  const RECORDING_FLUSH_DELAY = 2000;
   const canonicalMapRef = useRef({});
 
   const flushBatch = useCallback(() => {
@@ -79,7 +84,9 @@ export function useGraphStream(options = {}) {
 
     setOperations((prev) => {
       const next = [...batch, ...prev];
-      return next.length > bufferSize ? next.slice(0, bufferSize) : next;
+      const result = next.length > bufferSize ? next.slice(0, bufferSize) : next;
+      try { sessionStorage.setItem('graph:operations', JSON.stringify(result)); } catch {}
+      return result;
     });
 
     const cbs = callbacksRef.current;
@@ -160,6 +167,22 @@ export function useGraphStream(options = {}) {
     // Recording accumulation
     const batchKey = batch[0]?.traceId || `batch-${Date.now()}`;
     for (const op of batch) {
+      // Pipeline stage: record so replay can show the same stage indicator transitions.
+      // Opens the group if needed so early stages (classify, llm_extract, etc.) are captured
+      // even before the first node_added event arrives.
+      if (op.category === 'pipeline_stage') {
+        const groupKey = op.traceId || batchKey;
+        const buf = recordingBufferRef.current;
+        if (!buf[groupKey]) buf[groupKey] = { elements: [], label: '', timer: null };
+        buf[groupKey].elements.push({
+          category: 'pipeline_stage',
+          meta: op.meta,
+          label: op.label,
+          timestamp: op.timestamp,
+        });
+        continue;
+      }
+
       // Grounding flash: no graph element, but record nodeId so replay can trigger the flash animation.
       // Only append to an existing group (requires at least one node_added to have opened it).
       if (op.category === 'grounding_flash' && op.nodeId) {
@@ -341,6 +364,7 @@ export function useGraphStream(options = {}) {
     setOperations([]);
     setOpsPerSecond(0);
     opsTimestampsRef.current = [];
+    try { sessionStorage.removeItem('graph:operations'); } catch {}
   }, []);
 
   const pushOperation = useCallback((op) => {

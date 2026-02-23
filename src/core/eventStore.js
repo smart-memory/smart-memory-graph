@@ -30,8 +30,10 @@ function openDB() {
   });
 }
 
+const MAX_RECORDINGS = 20;
+
 /**
- * Save a recording, replacing any previous recording (last-session only).
+ * Save a recording, keeping up to MAX_RECORDINGS (oldest pruned when full).
  */
 export async function saveRecording(recording) {
   try {
@@ -39,8 +41,15 @@ export async function saveRecording(recording) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
 
-    // Clear all previous recordings — only keep the latest
-    store.clear();
+    // Prune oldest entries if at capacity
+    const keys = await new Promise((resolve, reject) => {
+      const req = store.getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (keys.length >= MAX_RECORDINGS) {
+      keys.sort().slice(0, keys.length - MAX_RECORDINGS + 1).forEach((k) => store.delete(k));
+    }
 
     store.add({
       ...recording,
@@ -77,6 +86,27 @@ export async function getLastRecording() {
   } catch (err) {
     console.warn('[EventStore] Failed to load recording:', err);
     return null;
+  }
+}
+
+/**
+ * Get all recordings, newest first.
+ */
+export async function getAllRecordings() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const all = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return all.sort((a, b) => b.timestamp - a.timestamp);
+  } catch (err) {
+    console.warn('[EventStore] Failed to load recordings:', err);
+    return [];
   }
 }
 

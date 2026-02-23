@@ -14,6 +14,18 @@ export function normalizeAPIResponse(apiData) {
   const seenNodeIds = new Set();
   const seenEdgeIds = new Set();
 
+  // Pre-scan edges to collect grounded node IDs (nodes with a GROUNDED_IN edge to a wikipedia: node)
+  const groundedIds = new Set();
+  for (const edge of (apiData.edges || apiData.links || [])) {
+    const edgeType = edge.edge_type || edge.type || '';
+    if (edgeType === 'GROUNDED_IN') {
+      const src = edge.source_id || edge.source || '';
+      const tgt = edge.target_id || edge.target || '';
+      if (src && !src.startsWith('wikipedia:')) groundedIds.add(src);
+      if (tgt && !tgt.startsWith('wikipedia:')) groundedIds.add(tgt);
+    }
+  }
+
   // Process nodes from the API response
   const rawNodes = apiData.nodes || apiData.items || [];
   for (const item of rawNodes) {
@@ -23,9 +35,9 @@ export function normalizeAPIResponse(apiData) {
     if (id.startsWith('version_') || id.startsWith('wikipedia:')) continue;
     seenNodeIds.add(id);
 
-    const isEntity = item.node_category === 'entity' || !!item.entity_type;
+    const isEntity = item.node_category === 'entity' || item.category === 'entity' || !!item.entity_type;
     const type = isEntity
-      ? (item.entity_type || item.type || 'concept')
+      ? (item.entity_type || item.memory_type || item.type || 'concept')
       : (item.memory_type || item.type || 'semantic');
     const category = isEntity ? 'entity' : 'memory';
 
@@ -39,6 +51,7 @@ export function normalizeAPIResponse(apiData) {
       created_at: item.created_at,
       parentId: item.parent_memory_id || null,
       metadata: item.metadata,
+      grounded: groundedIds.has(id),
     });
   }
 

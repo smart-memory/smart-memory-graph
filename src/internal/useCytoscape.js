@@ -114,12 +114,26 @@ export function useCytoscape(containerRef) {
     });
     cy.on('mouseover', 'node', (evt) => {
       const node = evt.target;
-      if (node !== cy && node.isNode() && onNodeHoverRef.current) {
+      if (node === cy || !node.isNode()) return;
+
+      cy.batch(() => {
+        const neighborhood = node.closedNeighborhood();
+        // Dim visible non-neighbors (skip already-hidden .dimmed elements)
+        cy.elements(':visible').not(neighborhood).not('.dimmed').addClass('hover-dimmed');
+        // Reveal labels on this node's connected edges
+        node.connectedEdges(':visible').addClass('hover-edge-visible');
+        node.addClass('hovered');
+      });
+
+      if (onNodeHoverRef.current) {
         const pos = evt.renderedPosition || evt.position;
         onNodeHoverRef.current(node.data(), pos);
       }
     });
     cy.on('mouseout', 'node', () => {
+      cy.batch(() => {
+        cy.elements().removeClass('hover-dimmed hover-edge-visible hovered');
+      });
       onNodeHoverOutRef.current?.();
     });
     cy.on('tap', (evt) => {
@@ -205,6 +219,7 @@ export function useCytoscape(containerRef) {
     const cy = cyRef.current;
     if (!cy || cy.nodes().length === 0) return;
 
+    const isFirst = firstLayoutRef.current;
     const shouldAnimate = !firstLayoutRef.current;
     firstLayoutRef.current = false;
 
@@ -212,8 +227,10 @@ export function useCytoscape(containerRef) {
       'cose-bilkent': {
         name: 'cose-bilkent',
         quality: 'default',
-        animate: shouldAnimate ? 'end' : false,
-        animationDuration: 400,
+        // Use true (morph) instead of 'end' (jump-to-end) for smooth position transitions
+        animate: shouldAnimate,
+        animationDuration: 600,
+        animationEasing: 'ease-in-out-sine',
         nodeDimensionsIncludeLabels: true,
         idealEdgeLength: 100,
         edgeElasticity: 0.45,
@@ -227,32 +244,107 @@ export function useCytoscape(containerRef) {
         name: 'dagre',
         rankDir: 'TB',
         animate: shouldAnimate,
-        animationDuration: 400,
+        animationDuration: 600,
+        animationEasing: 'ease-in-out-sine',
         nodeSep: 50,
         rankSep: 80,
       },
       circle: {
         name: 'circle',
         animate: shouldAnimate,
-        animationDuration: 400,
+        animationDuration: 600,
+        animationEasing: 'ease-in-out-sine',
       },
       concentric: {
         name: 'concentric',
         animate: shouldAnimate,
-        animationDuration: 400,
+        animationDuration: 600,
+        animationEasing: 'ease-in-out-sine',
         concentric: (node) => node.degree(),
         levelWidth: () => 2,
       },
       grid: {
         name: 'grid',
         animate: shouldAnimate,
-        animationDuration: 400,
+        animationDuration: 600,
+        animationEasing: 'ease-in-out-sine',
         condense: true,
       },
     };
 
     const config = { ...(layoutDefaults[layoutName] || { name: layoutName }), ...options };
-    cy.layout(config).run();
+
+    if (isFirst) {
+      // Entrance animation: compute layout positions first, then stagger nodes in.
+      // Layout runs with animate:false so positions are computed instantly without
+      // visual motion, then we collapse nodes to center and animate to final positions.
+      // randomize:true is required so cose-bilkent can spread nodes from non-degenerate
+      // start positions — without it, all nodes at {0,0} produce a collapsed result.
+      const entranceConfig = { ...config, animate: false, randomize: true };
+      const layout = cy.layout(entranceConfig);
+
+      cy.one('layoutstop', () => {
+        // Save final positions and target sizes computed by the layout
+        const finalPositions = {};
+        const targetSizes = {};
+        cy.nodes().forEach((n) => {
+          finalPositions[n.id()] = { ...n.position() };
+          targetSizes[n.id()] = {
+            w: parseFloat(n.style('width')),
+            h: parseFloat(n.style('height')),
+          };
+        });
+
+        // Collapse all nodes to viewport center (in graph coordinates)
+        const pan = cy.pan();
+        const zoom = cy.zoom();
+        const vcx = (cy.width() / 2 - pan.x) / zoom;
+        const vcy = (cy.height() / 2 - pan.y) / zoom;
+
+        cy.batch(() => {
+          cy.nodes().forEach((n) => {
+            n.position({ x: vcx, y: vcy });
+            n.style({ opacity: 0, width: 0, height: 0 });
+          });
+          cy.edges().style({ opacity: 0 });
+        });
+
+        // Stagger-animate nodes to their final positions (20ms between each, capped at 800ms).
+        // Look up nodes by ID at animation time (not via captured references) so that a
+        // concurrent mergeElements() call — which removes + re-adds elements — doesn't
+        // silently skip all animations because n.inside() === false on stale objects.
+        const nodeIds = cy.nodes().map((n) => n.id());
+        nodeIds.forEach((nodeId, i) => {
+          const pos = finalPositions[nodeId];
+          const { w, h } = targetSizes[nodeId] || { w: 16, h: 16 };
+          setTimeout(() => {
+            const fresh = cyRef.current?.getElementById(nodeId);
+            if (!fresh?.length) return;
+            fresh.animate(
+              { position: pos, style: { opacity: 1, width: w, height: h } },
+              { duration: 300, easing: 'ease-out-cubic' }
+            );
+          }, Math.min(i * 20, 800));
+        });
+
+        // Fade edges in after nodes have mostly appeared
+        const edgeDelay = Math.min(nodeIds.length * 20, 800) + 150;
+        setTimeout(() => {
+          if (!cyRef.current) return;
+          cyRef.current.edges().forEach((e) => {
+            if (!e.inside()) return;
+            e.animate(
+              { style: { opacity: 0.6 } },
+              { duration: 200, easing: 'ease-out-sine' }
+            );
+          });
+        }, edgeDelay);
+      });
+
+      layout.run();
+    } else {
+      cy.layout(config).run();
+    }
   }, []);
 
   const zoomIn = useCallback(() => {

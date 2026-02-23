@@ -54,6 +54,9 @@
  *
  * @property {function(string): Promise<void>} deleteNode
  *   Delete a memory node and its graph data by item_id.
+ *
+ * @property {function(string): Promise<void>} deleteEntityNode
+ *   Delete an entity graph node and all its edges from FalkorDB by node_id.
  */
 
 export {};

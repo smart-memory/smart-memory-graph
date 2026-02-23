@@ -53,6 +53,9 @@ export function createSDKAdapter(client) {
     deleteNode: (id) =>
       client.memories.delete(id),
 
+    deleteEntityNode: (id) =>
+      client.graph.deleteEntityNode(id),
+
     getAuthToken: () =>
       client.auth.tokenManager.getAccessToken(),
   };

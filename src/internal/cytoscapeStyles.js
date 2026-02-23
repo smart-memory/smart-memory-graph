@@ -1,4 +1,10 @@
-import { MEMORY_COLORS, ENTITY_COLORS, SPECIAL_COLORS, ANNOTATION_COLORS, ANNOTATION_BORDERS } from '../core/graphColors';
+import { MEMORY_COLORS, ENTITY_COLORS, SPECIAL_COLORS, ANNOTATION_COLORS, ANNOTATION_BORDERS, getNodeColor, desaturateColor } from '../core/graphColors';
+
+/** Compute degree-based size for entity nodes (12–24px). Memory nodes stay fixed at 28px. */
+function entityNodeSize(ele) {
+  const deg = ele.degree();
+  return Math.min(24, Math.max(12, 12 + deg * 1.5));
+}
 
 export function getCytoscapeStyles() {
   const styles = [
@@ -61,13 +67,46 @@ export function getCytoscapeStyles() {
         opacity: 1,
       },
     },
+    // ── Hover effects ──────────────────────────────────────────────────────
+    // Hovered node: soft colored glow ring + subtle scale
+    {
+      selector: 'node.hovered',
+      style: {
+        'border-width': 4,
+        'border-color': (ele) => ele.style('background-color'),
+        'border-opacity': 0.9,
+        'overlay-color': (ele) => ele.style('background-color'),
+        'overlay-padding': 6,
+        'overlay-opacity': 0.15,
+        'z-index': 100,
+      },
+    },
+    // Non-neighbor nodes dimmed on hover
+    {
+      selector: 'node.hover-dimmed',
+      style: {
+        opacity: 0.25,
+      },
+    },
+    // Non-neighbor edges dimmed on hover
+    {
+      selector: 'edge.hover-dimmed',
+      style: {
+        opacity: 0.1,
+      },
+    },
     // Base edge style
     {
       selector: 'edge',
       style: {
-        width: 1,
+        width: (ele) => {
+          const w = ele.data('weight') || ele.data('strength') || 1;
+          return Math.min(4, Math.max(0.5, w * 1.5));
+        },
         'line-color': '#475569', // slate-600
-        'target-arrow-shape': 'none',
+        'target-arrow-shape': 'triangle',
+        'target-arrow-color': '#475569', // slate-600 — matches line-color
+        'target-arrow-width': 0.8,
         'curve-style': 'bezier',
         opacity: 0.6,
         label: (ele) => {
@@ -75,7 +114,7 @@ export function getCytoscapeStyles() {
           return t === 'RELATED_ENTITY' ? '' : t;
         },
         'font-size': '8px',
-        color: '#64748b', // slate-500
+        color: '#475569', // matches line-color (slate-600)
         'text-outline-width': 1,
         'text-outline-color': '#0f172a',
         'text-rotation': 'autorotate',
@@ -88,6 +127,7 @@ export function getCytoscapeStyles() {
         width: 2,
         'line-color': '#f8fafc',
         opacity: 1,
+        color: '#64748b', // reveal label on selection
       },
     },
     // Highlighted edge (path)
@@ -107,9 +147,16 @@ export function getCytoscapeStyles() {
         display: 'none',
       },
     },
+    // Edge label visible on hover (via class toggle in mouseover handler)
+    {
+      selector: 'edge.hover-edge-visible',
+      style: {
+        color: '#64748b', // slate-500
+      },
+    },
   ];
 
-  // Add per-type node color styles for memory types
+  // Add per-type node color styles for memory types (fixed 28px)
   for (const [type, color] of Object.entries(MEMORY_COLORS)) {
     styles.push({
       selector: `node[type="${type}"]`,
@@ -117,19 +164,36 @@ export function getCytoscapeStyles() {
     });
   }
 
-  // Add per-type node color styles for entity types
+  // Add per-type node color styles for entity types (degree-based sizing)
   for (const [type, color] of Object.entries(ENTITY_COLORS)) {
     styles.push({
       selector: `node[type="${type}"]`,
-      style: { 'background-color': color, width: 16, height: 16 },
+      style: {
+        'background-color': color,
+        width: entityNodeSize,
+        height: entityNodeSize,
+      },
     });
   }
 
-  // Grounding nodes
+  // Grounding nodes (fixed 16px)
   styles.push({
     selector: 'node[category="grounding"]',
     style: { 'background-color': SPECIAL_COLORS.grounding, width: 16, height: 16 },
   });
+
+  // Grounded nodes — thin border indicates Wikipedia/Wikidata provenance
+  // Uses node.grounded class (set on load) AND data(grounded) (set for streaming nodes via onGroundingFlash)
+  for (const sel of ['node.grounded', 'node[grounded]']) {
+    styles.push({
+      selector: sel,
+      style: {
+        'border-width': 1.5,
+        'border-color': '#64748b', // slate-500 — visible on both colored nodes and dark canvas
+        'border-opacity': 1,
+      },
+    });
+  }
 
   // Streaming glow — newly arrived node from live event stream
   styles.push({
@@ -161,15 +225,15 @@ export function getCytoscapeStyles() {
     },
   });
 
-  // LOD cluster parent nodes (compound containers)
+  // LOD cluster parent nodes (compound containers) — subtle halo effect
   styles.push({
     selector: 'node.lod-cluster',
     style: {
-      'background-opacity': 0.12,
+      'background-opacity': 0.08,
       'background-color': '#64748b',
-      'border-width': 1,
-      'border-color': '#475569',
-      'border-opacity': 0.5,
+      'border-width': 2,
+      'border-color': (ele) => ENTITY_COLORS[ele.data('type')] || '#64748b',
+      'border-opacity': 0.4,
       shape: 'round-rectangle',
       'text-valign': 'top',
       'text-halign': 'center',
@@ -179,6 +243,27 @@ export function getCytoscapeStyles() {
       'padding': '12px',
     },
   });
+
+  // ── Temporal decay desaturation ──────────────────────────────────────────
+  // age_bucket is set on node data in cytoscapeConvert.js from created_at timestamp.
+  // Nodes blend toward slate-400 as they age. Fresh nodes (< 1 day) are unaffected.
+  const decayBuckets = [
+    { bucket: 'recent', ratio: 0.15 },  // 1–7 days: very slight
+    { bucket: 'aging',  ratio: 0.35 },  // 7–30 days: moderate
+    { bucket: 'old',    ratio: 0.55 },  // 30+ days: strongly muted
+  ];
+
+  for (const { bucket, ratio } of decayBuckets) {
+    styles.push({
+      selector: `node[age_bucket="${bucket}"]`,
+      style: {
+        'background-color': (ele) => {
+          const color = getNodeColor(ele.data('type'), ele.data('category'));
+          return desaturateColor(color, ratio);
+        },
+      },
+    });
+  }
 
   // ── Annotation styles (channel-scoped) ──────────────────────────────
   // Generated from contracts/graph-annotations.json
