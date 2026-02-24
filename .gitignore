@@ -5,3 +5,4 @@ dist/
 # Local secrets
 .secrets
 .act.secrets
+.idea/
