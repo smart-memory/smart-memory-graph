@@ -21,7 +21,7 @@ export function createFetchAdapter({ apiUrl, getToken, getTeamId }) {
     // Prefer explicit getTeamId(), fall back to sm_team_id cookie set by /auth/clerk/session
     const team = getTeamId() || getCookie('sm_team_id');
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (team) headers['X-Team-Id'] = team;
+    if (team) headers['X-Workspace-Id'] = team;
     const opts = { method, headers, credentials: 'include' };
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(`${apiUrl}${path}`, opts);
