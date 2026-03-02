@@ -1,5 +1,5 @@
 import { ANNOTATION_COLORS } from './graphColors';
-import annotationContract from '@contracts/graph-annotations.json';
+import annotationContract from '../../contracts/graph-annotations.json';
 
 /**
  * Build legend items from graph data + annotations.

@@ -1,5 +1,5 @@
-import graphColors from '@contracts/graph-colors.json';
-import annotationContract from '@contracts/graph-annotations.json';
+import graphColors from '../../contracts/graph-colors.json';
+import annotationContract from '../../contracts/graph-annotations.json';
 
 export const MEMORY_COLORS = {
   memory: graphColors.special.memory,
