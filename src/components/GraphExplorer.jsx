@@ -182,6 +182,12 @@ export default function GraphExplorer({
     saveToUrl,
   });
 
+  // Wire node click/dblclick handlers to Cytoscape events
+  useEffect(() => {
+    cytoscape.setOnNodeClick(interaction.handleNodeClick);
+    cytoscape.setOnNodeDblClick(interaction.handleNodeDblClick);
+  }, [cytoscape, interaction.handleNodeClick, interaction.handleNodeDblClick]);
+
   const dripFeed = useDripFeed({
     cytoscape,
     filters,

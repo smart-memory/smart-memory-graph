@@ -41,9 +41,10 @@ export function useGraphInteraction({
   const [timeTravelLoading, setTimeTravelLoading] = useState(false);
   const [layout, setLayout] = useState(urlState?.layout || 'cose-bilkent');
 
-  // Single click: select node + highlight neighbors
+  // Single click: select node + highlight neighbors + open detail panel
   const handleNodeClick = useCallback((nodeData) => {
     setSelectedNode(nodeData);
+    setDetailPanelOpen(true);
     cytoscape.selectNode(nodeData.id);
     setConnectedEdges(cytoscape.getConnectedEdges(nodeData.id));
 
