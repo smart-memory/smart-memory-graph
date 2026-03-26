@@ -91,8 +91,8 @@ export function coalesceGraphData(nodes, edges, canonicalMap = {}) {
       id: edgeKey,
       source: a,
       target: b,
-      label: 'RELATED_ENTITY',
-      type: 'RELATED_ENTITY',
+      label: '',
+      type: 'CONTAINS_ENTITY',
     });
   }
 

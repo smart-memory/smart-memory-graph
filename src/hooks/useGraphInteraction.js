@@ -191,15 +191,10 @@ export function useGraphInteraction({
     cytoscape.clearHighlights();
   }, [cytoscape]);
 
-  // LOD clustering
-  useEffect(() => {
-    const totalNodes = (data?.nodes?.length || 0);
-    if (totalNodes > 200) {
-      cytoscape.applyClustering();
-    } else {
-      cytoscape.removeClustering();
-    }
-  }, [data?.nodes?.length, cytoscape]);
+  // LOD clustering — DISABLED pending VIS-GRAPH-13 (collapsible aggregate nodes).
+  // The compound-parent approach creates ugly rectangular boxes and interferes with
+  // filters and selection mode. Will be replaced with proper collapsible cluster nodes.
+  // See: docs/features/VIS-GRAPH-13/design.md
 
   // Time travel
   const handleTimeTravel = useCallback(async (isoTimestamp) => {

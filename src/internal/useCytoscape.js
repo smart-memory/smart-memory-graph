@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import cytoscape from 'cytoscape';
 import cola from 'cytoscape-cola';
 import coseBilkent from 'cytoscape-cose-bilkent';
@@ -27,12 +27,12 @@ export const STREAMING_LAYOUT = {
   animate: true,
   animationDuration: 150,
   refresh: 2,
-  maxSimulationTime: 1500,
+  maxSimulationTime: 1200,
   ungrabifyWhileSimulating: false,
   fit: false,
-  padding: 40,
-  nodeSpacing: () => 20,
-  edgeLength: 120,
+  padding: 20,
+  nodeSpacing: () => 12,
+  edgeLength: 110,
   randomize: false,
   avoidOverlap: true,
 };
@@ -46,9 +46,9 @@ export function getFitElements(cy) {
   return active.length > 0 ? active : cy.elements(':visible');
 }
 
-/** Padding proportional to the viewport's smaller dimension (5%, clamped 20–80px). */
+/** Padding proportional to the viewport's smaller dimension (3%, clamped 12–48px). */
 export function getFitPadding(cy) {
-  return Math.round(Math.max(20, Math.min(80, Math.min(cy.width(), cy.height()) * 0.05)));
+  return Math.round(Math.max(12, Math.min(48, Math.min(cy.width(), cy.height()) * 0.03)));
 }
 
 export function useCytoscape(containerRef) {
@@ -227,17 +227,22 @@ export function useCytoscape(containerRef) {
       'cose-bilkent': {
         name: 'cose-bilkent',
         quality: 'default',
-        // Use true (morph) instead of 'end' (jump-to-end) for smooth position transitions
         animate: shouldAnimate,
         animationDuration: 600,
         animationEasing: 'ease-in-out-sine',
         nodeDimensionsIncludeLabels: true,
-        idealEdgeLength: 100,
-        edgeElasticity: 0.45,
-        nestingFactor: 0.1,
-        gravity: 0.25,
-        numIter: 500,
-        tile: true,
+        fit: false,
+        padding: 20,
+        idealEdgeLength: 110,
+        edgeElasticity: 0.12,
+        nodeRepulsion: 10000,
+        nestingFactor: 0.05,
+        gravity: 1.6,
+        gravityRange: 2.4,
+        gravityCompound: 1.0,
+        gravityRangeCompound: 2.0,
+        numIter: 1200,
+        tile: false,
         randomize: shouldAnimate,
       },
       dagre: {
@@ -284,6 +289,68 @@ export function useCytoscape(containerRef) {
       const layout = cy.layout(entranceConfig);
 
       cy.one('layoutstop', () => {
+        // Pack disconnected components close together without crushing
+        // intra-cluster edge lengths. Moves whole components, not individual nodes.
+        if (cy.nodes().length > 1) {
+          const components = cy.elements().components().filter((c) => c.nodes().length > 0);
+
+          if (components.length > 1) {
+            const graphBb = cy.elements().boundingBox();
+            const gcx = (graphBb.x1 + graphBb.x2) / 2;
+            const gcy = (graphBb.y1 + graphBb.y2) / 2;
+            const gap = 28;
+            const radiusStep = 24;
+            const compactness = 0.22;
+            const placed = [];
+
+            const overlaps = (a, b) => !(
+              a.x2 + gap <= b.x1 ||
+              a.x1 >= b.x2 + gap ||
+              a.y2 + gap <= b.y1 ||
+              a.y1 >= b.y2 + gap
+            );
+
+            const ordered = [...components].sort(
+              (a, b) => (b.boundingBox().w * b.boundingBox().h) - (a.boundingBox().w * a.boundingBox().h)
+            );
+
+            ordered.forEach((component, index) => {
+              const bb = component.boundingBox();
+              const ccx = (bb.x1 + bb.x2) / 2;
+              const ccy = (bb.y1 + bb.y2) / 2;
+              const angle = index === 0 ? 0 : Math.atan2(ccy - gcy, ccx - gcx);
+
+              let radius = index === 0 ? 0 : Math.hypot(ccx - gcx, ccy - gcy) * compactness;
+              let nextCx = gcx + Math.cos(angle) * radius;
+              let nextCy = gcy + Math.sin(angle) * radius;
+              let nextBox = {
+                x1: nextCx - bb.w / 2, x2: nextCx + bb.w / 2,
+                y1: nextCy - bb.h / 2, y2: nextCy + bb.h / 2,
+              };
+
+              while (placed.some((p) => overlaps(nextBox, p))) {
+                radius += radiusStep;
+                nextCx = gcx + Math.cos(angle) * radius;
+                nextCy = gcy + Math.sin(angle) * radius;
+                nextBox = {
+                  x1: nextCx - bb.w / 2, x2: nextCx + bb.w / 2,
+                  y1: nextCy - bb.h / 2, y2: nextCy + bb.h / 2,
+                };
+              }
+
+              const dx = nextCx - ccx;
+              const dy = nextCy - ccy;
+              component.nodes().forEach((n) => {
+                const pos = n.position();
+                n.position({ x: pos.x + dx, y: pos.y + dy });
+              });
+              placed.push(nextBox);
+            });
+          }
+
+          cy.fit(getFitElements(cy), getFitPadding(cy));
+        }
+
         // Save final positions and target sizes computed by the layout
         const finalPositions = {};
         const targetSizes = {};
@@ -543,10 +610,16 @@ export function useCytoscape(containerRef) {
     if (!cy) return [];
     const node = cy.getElementById(nodeId);
     if (!node.length) return [];
-    return node.connectedEdges().map((e) => e.data());
+    return node.connectedEdges().map((e) => {
+      const data = e.data();
+      // Enrich with the other node's label so DetailPanel can show names, not UUIDs
+      const otherId = data.source === nodeId ? data.target : data.source;
+      const otherNode = cy.getElementById(otherId);
+      return { ...data, _otherLabel: otherNode.length ? otherNode.data('label') : null };
+    });
   }, []);
 
-  const LOD_THRESHOLD = 200;
+  const LOD_THRESHOLD = 500;
 
   const removeClustering = useCallback(() => {
     const cy = cyRef.current;
@@ -622,9 +695,18 @@ export function useCytoscape(containerRef) {
       cy.nodes().ungrabify();
     } else {
       cy.nodes().grabify();
-      // Exit selection mode: clear selection highlights
+      // Exit selection mode: clear selection, move mode, and isolation
       cy.elements().unselect();
       setSelectedNodeIds(new Set());
+      if (moveModeRef.current) {
+        moveModeRef.current = false;
+        setMoveModeState(false);
+      }
+      if (isolationRef.current) {
+        cy.elements().removeClass('dimmed');
+        isolationRef.current = false;
+        setIsolated(false);
+      }
     }
   }, []);
 
@@ -633,6 +715,82 @@ export function useCytoscape(containerRef) {
     const cy = cyRef.current;
     if (!cy) return;
     cy.nodes().not('.dimmed').select();
+  }, []);
+
+  // --- Multi-select actions ---
+
+  // Isolate: dim everything except selected nodes + their connecting edges.
+  // Stores pre-isolation state so clearIsolation() can restore it.
+  const isolationRef = useRef(false);
+  const [isolated, setIsolated] = useState(false);
+
+  const isolateSelected = useCallback(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    const selected = cy.nodes(':selected');
+    if (selected.length === 0) return;
+
+    const selectedIds = new Set(selected.map((n) => n.id()));
+    cy.batch(() => {
+      // Dim all non-selected nodes
+      cy.nodes().forEach((n) => {
+        if (!selectedIds.has(n.id())) n.addClass('dimmed');
+        else n.removeClass('dimmed');
+      });
+      // Show edges where both endpoints are selected, dim the rest
+      cy.edges().forEach((e) => {
+        if (selectedIds.has(e.source().id()) && selectedIds.has(e.target().id())) {
+          e.removeClass('dimmed');
+        } else {
+          e.addClass('dimmed');
+        }
+      });
+    });
+    isolationRef.current = true;
+    setIsolated(true);
+    // Fit to the isolated subgraph
+    cy.fit(selected, getFitPadding(cy));
+  }, []);
+
+  const clearIsolation = useCallback(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      cy.elements().removeClass('dimmed');
+    });
+    isolationRef.current = false;
+    setIsolated(false);
+    cy.fit(getFitElements(cy), getFitPadding(cy));
+  }, []);
+
+  // Move mode: make selected nodes grabbable so they can be dragged as a group.
+  // Cytoscape natively moves all :selected nodes when you drag one of them.
+  const [moveMode, setMoveModeState] = useState(false);
+  const moveModeRef = useRef(false);
+
+  const setMoveMode = useCallback((enabled) => {
+    moveModeRef.current = enabled;
+    setMoveModeState(enabled);
+    const cy = cyRef.current;
+    if (!cy) return;
+    if (enabled) {
+      // Only grabify selected nodes — unselected stay locked
+      cy.nodes(':selected').grabify();
+      // Disable box selection so drag = move, not select-more
+      cy.boxSelectionEnabled(false);
+      cy.userPanningEnabled(false);
+    } else {
+      cy.nodes().ungrabify();
+      // Restore selection-mode settings if still in selection mode
+      if (selectionModeRef.current) {
+        cy.boxSelectionEnabled(true);
+        cy.userPanningEnabled(false);
+      } else {
+        cy.boxSelectionEnabled(false);
+        cy.userPanningEnabled(true);
+        cy.nodes().grabify();
+      }
+    }
   }, []);
 
   // Remove a set of nodes (and their edges) from the graph. Called after backend delete.
@@ -648,7 +806,11 @@ export function useCytoscape(containerRef) {
     setSelectedNodeIds(new Set());
   }, []);
 
-  return {
+  // Memoize the return object so that only reactive state changes (ready, autoFit,
+  // selectedNodeIds, selectionMode, isolated, moveMode) produce a new identity.
+  // Without this, every render creates a new object and downstream effects that
+  // depend on `cytoscape` (filters, clustering, annotations) re-fire spuriously.
+  return useMemo(() => ({
     cy: cyRef,
     ready: cyReady,
     setContainerRef,
@@ -680,5 +842,10 @@ export function useCytoscape(containerRef) {
     selectAll,
     selectionMode,
     setSelectionMode,
-  };
+    isolateSelected,
+    clearIsolation,
+    isolated,
+    moveMode,
+    setMoveMode,
+  }), [cyReady, autoFit, selectedNodeIds, selectionMode, isolated, moveMode]);
 }
