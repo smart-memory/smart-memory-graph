@@ -36,14 +36,19 @@ export { createSDKAdapter } from './adapters/sdkAdapter';
 export {
   getNodeColor,
   getNodeSize,
+  getOriginPrefix,
+  getOriginBorderColor,
   MEMORY_COLORS,
   ENTITY_COLORS,
   SPECIAL_COLORS,
+  ORIGIN_BORDER_COLORS,
   NODE_SIZES,
   ALL_MEMORY_TYPES,
   ALL_ENTITY_TYPES,
   MEMORY_TYPE_SET,
 } from './core/graphColors';
+
+export { getOriginTier, getTierLabel } from './core/originTiers';
 
 export { ENTITY_TYPES, LAYOUT_OPTIONS, RECIPROCAL_PAIRS } from './core/constants';
 export { normalizeAPIResponse, normalizeExtractionResults } from './core/normalize';
@@ -53,6 +58,9 @@ export { eventToGraphNode, eventToGraphEdge } from './core/eventTransform';
 export { searchWikipedia } from './core/wikipedia';
 export { exportPNG, exportSVG } from './core/export';
 export { saveRecording, getLastRecording, getAllRecordings, clearRecordings } from './core/eventStore';
+
+// --- Origin ---
+export { default as OriginLegend } from './components/OriginLegend';
 
 // --- Annotations ---
 export { default as AnnotationLegend } from './components/AnnotationLegend';

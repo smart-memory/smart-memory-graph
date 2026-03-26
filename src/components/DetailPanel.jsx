@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getNodeColor } from '../core/graphColors';
+import { getNodeColor, getOriginBorderColor } from '../core/graphColors';
+import { getOriginTier, getTierLabel } from '../core/originTiers';
 import { ENTITY_TYPES } from '../core/constants';
 import { useEntityCorrections } from '../hooks/useEntityCorrections';
 import WikipediaOverlay from './WikipediaOverlay';
@@ -274,7 +275,7 @@ export default function DetailPanel({ node, edges = [], onClose, onExpand, expan
                     <span className="text-slate-500">{direction}</span>
                     <span className="text-blue-400 font-medium truncate">{edge.label}</span>
                     <span className="text-slate-500 truncate ml-auto" title={otherId}>
-                      {otherId.length > 16 ? otherId.substring(0, 16) + '...' : otherId}
+                      {edge._otherLabel || (otherId.length > 16 ? otherId.substring(0, 16) + '...' : otherId)}
                     </span>
                   </div>
                 );
@@ -312,6 +313,32 @@ export default function DetailPanel({ node, edges = [], onClose, onExpand, expan
                 />
               </div>
               <span className="text-xs text-slate-400">{(node.confidence * 100).toFixed(0)}%</span>
+            </div>
+          </section>
+        )}
+
+        {/* Origin provenance */}
+        {node.origin && (
+          <section>
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Origin</h3>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const borderColor = getOriginBorderColor(node.origin);
+                if (node.origin === 'unknown') {
+                  return <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0 border border-dashed border-red-500" />;
+                }
+                return borderColor
+                  ? <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: borderColor }} />
+                  : null;
+              })()}
+              <span className={`text-xs font-mono ${node.origin === 'unknown' ? 'text-red-400' : 'text-slate-300'}`}>
+                {node.origin}
+              </span>
+            </div>
+            <div className={`text-[10px] mt-0.5 ${node.origin === 'unknown' ? 'text-red-500/70' : 'text-slate-500'}`}>
+              {node.origin === 'unknown'
+                ? 'Untagged write path'
+                : getTierLabel(getOriginTier(node.origin))}
             </div>
           </section>
         )}

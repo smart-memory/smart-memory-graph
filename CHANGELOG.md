@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Origin provenance visualization (CORE-ORIGIN-1 Phase 4)
+  - Color-coded node borders by origin prefix (evolver=amber, code=green, conversation=indigo, enricher=teal, hook=gray, import=blue, unknown=red dashed, user=none)
+  - Origin display in node detail panel with tier label
+  - OriginLegend component (visible by default in GraphExplorer)
+  - Origin extraction in normalize.js with triple fallback for backend compat
+  - `getOriginPrefix()`, `getOriginBorderColor()`, `getOriginTier()`, `getTierLabel()` utilities
+  - `originPrefixes` section in graph-colors.json contract
+  - `origin-contract.json` with full origin taxonomy and tier assignments
+
 ## 0.1.0 (2026-02-17)
 
 Initial release — extracted from `smart-memory-viewer`.

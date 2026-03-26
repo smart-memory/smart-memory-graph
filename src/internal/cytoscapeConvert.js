@@ -2,6 +2,7 @@
  * Conversion layer between canonical GraphNode/GraphEdge and Cytoscape element format.
  * This is the ONE place where format conversion happens — enforced by the internal/ convention.
  */
+import { getOriginPrefix } from '../core/graphColors';
 
 const ONE_DAY_MS = 86_400_000;
 
@@ -28,6 +29,8 @@ export function graphNodeToCyElement(node) {
       confidence: node.confidence,
       created_at: node.created_at,
       age_bucket: computeAgeBucket(node.created_at),
+      origin: node.origin || 'unknown',
+      origin_prefix: getOriginPrefix(node.origin),
       parentId: node.parentId || null,
       metadata: node.metadata,
       grounded: node.grounded ? true : undefined,
@@ -64,6 +67,7 @@ export function cyElementToGraphNode(el) {
     content: d.content,
     confidence: d.confidence,
     created_at: d.created_at,
+    origin: d.origin,
     metadata: d.metadata,
   };
 }

@@ -33,5 +33,15 @@
     "grounding":  "#9ca3af",
     "default":    "#94a3b8",
     "memory":     "#f59e0b"
+  },
+  "originPrefixes": {
+    "user":         null,
+    "conversation": "#6366f1",
+    "code":         "#22c55e",
+    "evolver":      "#f59e0b",
+    "enricher":     "#14b8a6",
+    "hook":         "#9ca3af",
+    "import":       "#3b82f6",
+    "unknown":      "#ef4444"
   }
 }

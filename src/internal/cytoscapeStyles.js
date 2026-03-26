@@ -1,4 +1,4 @@
-import { MEMORY_COLORS, ENTITY_COLORS, SPECIAL_COLORS, ANNOTATION_COLORS, ANNOTATION_BORDERS, getNodeColor, desaturateColor } from '../core/graphColors';
+import { MEMORY_COLORS, ENTITY_COLORS, SPECIAL_COLORS, ORIGIN_BORDER_COLORS, ANNOTATION_COLORS, ANNOTATION_BORDERS, getNodeColor, desaturateColor } from '../core/graphColors';
 
 /** Compute degree-based size for entity nodes (12–24px). Memory nodes stay fixed at 28px. */
 function entityNodeSize(ele) {
@@ -22,7 +22,22 @@ export function getCytoscapeStyles() {
         'background-color': '#94a3b8', // default
         width: 16,
         height: 16,
-        'border-width': 0,
+        'border-width': (ele) => {
+          const prefix = ele.data('origin_prefix');
+          if (!prefix || prefix === 'user' || !ORIGIN_BORDER_COLORS[prefix]) return 0;
+          return prefix === 'unknown' ? 2.5 : 2;
+        },
+        'border-color': (ele) => {
+          const prefix = ele.data('origin_prefix');
+          return ORIGIN_BORDER_COLORS[prefix] || '#94a3b8';
+        },
+        'border-opacity': (ele) => {
+          const prefix = ele.data('origin_prefix');
+          return (prefix && prefix !== 'user' && ORIGIN_BORDER_COLORS[prefix]) ? 0.85 : 0;
+        },
+        'border-style': (ele) => {
+          return ele.data('origin_prefix') === 'unknown' ? 'dashed' : 'solid';
+        },
         'text-max-width': '100px',
         'text-wrap': 'ellipsis',
       },

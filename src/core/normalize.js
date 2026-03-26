@@ -41,6 +41,8 @@ export function normalizeAPIResponse(apiData) {
       : (item.memory_type || item.type || 'semantic');
     const category = isEntity ? 'entity' : 'memory';
 
+    const origin = item.origin || item.properties?.origin || item.metadata?.origin || 'unknown';
+
     nodes.push({
       id,
       label: item.label || item.title || item.content?.substring(0, 40) || id.substring(0, 12),
@@ -52,6 +54,7 @@ export function normalizeAPIResponse(apiData) {
       parentId: item.parent_memory_id || null,
       metadata: item.metadata,
       grounded: groundedIds.has(id),
+      origin,
     });
   }
 

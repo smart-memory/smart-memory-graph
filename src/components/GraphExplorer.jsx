@@ -7,6 +7,7 @@ import SearchBar from './SearchBar';
 import TimeTravelSlider from './TimeTravelSlider';
 import OperationsBar from './OperationsBar';
 import ReplayButton from './ReplayButton';
+import OriginLegend from './OriginLegend';
 import { useCytoscape } from '../internal/useCytoscape';
 import { useGraphData } from '../hooks/useGraphData';
 import { useGraphFilters } from '../hooks/useGraphFilters';
@@ -38,6 +39,7 @@ export default function GraphExplorer({
   wsUrl,
   wsToken,
   toolbarRightActions,
+  showOriginLegend = true,
   className = '',
 }) {
   // Data: controlled (data only), uncontrolled (adapter only), or hybrid (both).
@@ -244,10 +246,15 @@ export default function GraphExplorer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges, cytoscape.ready, loading]);
 
-  // Apply filters whenever they change
+  // Apply filters whenever they change.
+  // Deliberately omit `cytoscape` from deps — applyFilter is a stable useCallback ref
+  // and including the whole cytoscape object re-triggers filters on unrelated state
+  // changes (selection mode, move mode), which causes LOD clustering to re-fire and
+  // nodes to disappear.
   useEffect(() => {
     cytoscape.applyFilter(filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter);
-  }, [filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter, cytoscape]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter]);
 
   // Apply annotations whenever they change OR data is replaced.
   // setElements() destroys all Cytoscape elements (and their classes), so annotations
@@ -433,6 +440,8 @@ export default function GraphExplorer({
           setContainerRef={cytoscape.setContainerRef}
         />
 
+        <OriginLegend visible={showOriginLegend} />
+
         {/* Detail panel — absolute overlay */}
         {interaction.detailPanelOpen && interaction.selectedNode && (
           <div className="absolute right-0 top-0 bottom-0 z-30">
@@ -505,6 +514,25 @@ export default function GraphExplorer({
       {cytoscape.selectedNodeIds.size > 0 && (
         <div className="absolute bottom-16 right-4 z-50 flex items-center gap-2 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 shadow-lg">
           <span className="text-slate-300 text-xs">{cytoscape.selectedNodeIds.size} selected</span>
+          <div className="w-px h-4 bg-slate-600" />
+          <button
+            type="button"
+            onClick={() => cytoscape.setMoveMode(!cytoscape.moveMode)}
+            className={`text-xs font-medium transition-colors ${
+              cytoscape.moveMode ? 'text-blue-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Drag to move selected nodes as a group"
+          >
+            Move
+          </button>
+          <button
+            type="button"
+            onClick={cytoscape.isolateSelected}
+            className="text-slate-400 hover:text-slate-200 text-xs font-medium transition-colors"
+            title="Show only selected nodes, hide everything else"
+          >
+            Isolate
+          </button>
           <button
             type="button"
             onClick={handleDeleteSelected}
@@ -514,10 +542,24 @@ export default function GraphExplorer({
           </button>
           <button
             type="button"
-            onClick={() => cytoscape.cy.current?.elements().unselect()}
+            onClick={() => {
+              cytoscape.setMoveMode(false);
+              cytoscape.cy.current?.elements().unselect();
+            }}
             className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
           >
             ✕
+          </button>
+        </div>
+      )}
+      {cytoscape.isolated && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-indigo-900/90 border border-indigo-600 text-indigo-200 px-4 py-1.5 rounded-lg text-xs font-medium">
+          Isolated view
+          <button
+            onClick={cytoscape.clearIsolation}
+            className="ml-1 text-indigo-400 hover:text-indigo-200 underline"
+          >
+            Show all
           </button>
         </div>
       )}

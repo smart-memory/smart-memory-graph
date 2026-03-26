@@ -13,6 +13,34 @@ export const SPECIAL_COLORS = {
   default: graphColors.special.default,
 };
 
+export const ORIGIN_BORDER_COLORS = graphColors.originPrefixes || {};
+
+// Maps raw first-segment prefixes to conceptual origin groups for border colors.
+const PREFIX_GROUP_MAP = {
+  cli: 'user',
+  api: 'user',
+  mcp: 'user',
+  structured: 'hook',
+  user: 'user',
+  conversation: 'conversation',
+  code: 'code',
+  evolver: 'evolver',
+  enricher: 'enricher',
+  hook: 'hook',
+  import: 'import',
+};
+
+export function getOriginPrefix(origin) {
+  if (!origin || origin === 'unknown') return 'unknown';
+  const raw = origin.split(':')[0];
+  return PREFIX_GROUP_MAP[raw] ?? 'unknown';
+}
+
+export function getOriginBorderColor(origin) {
+  const prefix = getOriginPrefix(origin);
+  return ORIGIN_BORDER_COLORS[prefix] ?? null;
+}
+
 export const NODE_SIZES = { memory: 14, entity: 8, grounding: 8 };
 
 export function getNodeColor(type, category) {

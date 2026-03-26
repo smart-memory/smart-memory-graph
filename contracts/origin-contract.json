@@ -1,0 +1,32 @@
+{
+  "_source": "CORE-ORIGIN-1",
+  "_canonical": "smart-memory-docs/docs/features/CORE-ORIGIN-1/origin-contract.json",
+  "_description": "Origin taxonomy and tier assignments for memory provenance",
+  "origins": {
+    "cli:add": {"tier": 1, "description": "CLI add command"},
+    "cli:watch": {"tier": 1, "description": "CLI watch auto-ingest"},
+    "api:ingest": {"tier": 1, "description": "REST API ingest"},
+    "api:add": {"tier": 1, "description": "REST API add"},
+    "mcp:memory_add": {"tier": 2, "description": "MCP memory_add tool"},
+    "conversation:distill": {"tier": 3, "description": "MCP distillation turns"},
+    "evolver:episodic_to_semantic": {"tier": 2, "description": "Episodic graduated to semantic"},
+    "evolver:working_to_episodic": {"tier": 2, "description": "Working buffer summarized"},
+    "evolver:working_to_procedural": {"tier": 2, "description": "Procedural pattern extracted"},
+    "evolver:episodic_to_zettel": {"tier": 2, "description": "Episodic refined to zettel"},
+    "evolver:opinion_synthesis": {"tier": 3, "description": "Opinion synthesized"},
+    "evolver:observation_synthesis": {"tier": 3, "description": "Observation synthesized"},
+    "evolver:opinion_reinforcement": {"tier": 3, "description": "Opinion confidence updated"},
+    "evolver:decision_confidence": {"tier": 3, "description": "Decision confidence adjusted"},
+    "code:index": {"tier": 1, "description": "Directly indexed code entities"},
+    "code:derived": {"tier": 2, "description": "Code-derived insights"},
+    "hook:session_end": {"tier": 4, "description": "Session-end hook persist"},
+    "structured:anchor": {"tier": 4, "description": "Structured anchor ingestion"},
+    "unknown": {"tier": 4, "description": "Untagged write path (bug)"}
+  },
+  "tiers": {
+    "1": {"label": "User content", "recall_default": true, "search_default": true},
+    "2": {"label": "Graduated evolved", "recall_default": true, "search_default": true},
+    "3": {"label": "Speculative derived", "recall_default": false, "search_default": true},
+    "4": {"label": "System infrastructure", "recall_default": false, "search_default": false}
+  }
+}
