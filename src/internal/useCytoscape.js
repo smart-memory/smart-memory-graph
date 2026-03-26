@@ -570,7 +570,22 @@ export function useCytoscape(containerRef) {
     cy.batch(() => {
       cy.elements().removeClass('highlighted dimmed neighbor');
     });
-    reapplyFilters();
+    // Restore the correct dimming layer: isolation if active, else filters.
+    if (isolationRef.current && isolatedIdsRef.current) {
+      const ids = isolatedIdsRef.current;
+      cy.batch(() => {
+        cy.nodes().forEach((n) => {
+          if (!ids.has(n.id())) n.addClass('dimmed');
+        });
+        cy.edges().forEach((e) => {
+          if (!ids.has(e.source().id()) || !ids.has(e.target().id())) {
+            e.addClass('dimmed');
+          }
+        });
+      });
+    } else {
+      reapplyFilters();
+    }
   }, [reapplyFilters]);
 
   const highlightElements = useCallback((nodeIds, edgeIds = []) => {
@@ -718,6 +733,7 @@ export function useCytoscape(containerRef) {
       if (isolationRef.current) {
         cy.elements().removeClass('dimmed');
         isolationRef.current = false;
+        isolatedIdsRef.current = null;
         setIsolated(false);
         reapplyFilters();
       }
@@ -736,6 +752,7 @@ export function useCytoscape(containerRef) {
   // Isolate: dim everything except selected nodes + their connecting edges.
   // Stores pre-isolation state so clearIsolation() can restore it.
   const isolationRef = useRef(false);
+  const isolatedIdsRef = useRef(null);
   const [isolated, setIsolated] = useState(false);
 
   const isolateSelected = useCallback(() => {
@@ -761,6 +778,7 @@ export function useCytoscape(containerRef) {
       });
     });
     isolationRef.current = true;
+    isolatedIdsRef.current = selectedIds;
     setIsolated(true);
     // Fit to the isolated subgraph
     cy.fit(selected, getFitPadding(cy));
@@ -773,6 +791,7 @@ export function useCytoscape(containerRef) {
       cy.elements().removeClass('dimmed');
     });
     isolationRef.current = false;
+    isolatedIdsRef.current = null;
     setIsolated(false);
     reapplyFilters();
     cy.fit(getFitElements(cy), getFitPadding(cy));
