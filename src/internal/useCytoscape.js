@@ -226,8 +226,8 @@ export function useCytoscape(containerRef) {
     cy.batch(() => {
       cy.elements().remove();
       cy.add(elements);
+      restoreDimmingState(cy);
     });
-    restoreDimmingState(cy);
   }, []);
 
   /**
@@ -260,8 +260,8 @@ export function useCytoscape(containerRef) {
           if (pos) n.position(pos);
         });
       }
+      restoreDimmingState(cy);
     });
-    restoreDimmingState(cy);
 
     return { isInitial };
   }, []);
@@ -666,8 +666,8 @@ export function useCytoscape(containerRef) {
           addedCount++;
         }
       }
+      if (addedCount > 0) restoreDimmingState(cy);
     });
-    if (addedCount > 0) restoreDimmingState(cy);
     return addedCount;
   }, []);
 
