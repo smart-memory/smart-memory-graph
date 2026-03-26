@@ -429,9 +429,13 @@ export function useCytoscape(containerRef) {
     if (cy) cy.fit(getFitElements(cy), getFitPadding(cy));
   }, []);
 
+  // Track the latest filter args so isolation/highlight clear can re-apply them.
+  const lastFilterArgsRef = useRef(null);
+
   const applyFilter = useCallback((visibleNodeIds, visibleEdgeTypes, cascade = true) => {
     const cy = cyRef.current;
     if (!cy) return;
+    lastFilterArgsRef.current = { visibleNodeIds, visibleEdgeTypes, cascade };
     cy.batch(() => {
       const nodesWithVisibleEdge = new Set();
       const targetsOfFilteredEdges = new Set();
@@ -469,6 +473,14 @@ export function useCytoscape(containerRef) {
       });
     });
   }, []);
+
+  // Re-apply the last known filters (used after clearing isolation/highlights).
+  const reapplyFilters = useCallback(() => {
+    const args = lastFilterArgsRef.current;
+    if (args) {
+      applyFilter(args.visibleNodeIds, args.visibleEdgeTypes, args.cascade);
+    }
+  }, [applyFilter]);
 
   const applyAnnotations = useCallback((annotations) => {
     const cy = cyRef.current;
@@ -558,7 +570,8 @@ export function useCytoscape(containerRef) {
     cy.batch(() => {
       cy.elements().removeClass('highlighted dimmed neighbor');
     });
-  }, []);
+    reapplyFilters();
+  }, [reapplyFilters]);
 
   const highlightElements = useCallback((nodeIds, edgeIds = []) => {
     const cy = cyRef.current;
@@ -706,9 +719,10 @@ export function useCytoscape(containerRef) {
         cy.elements().removeClass('dimmed');
         isolationRef.current = false;
         setIsolated(false);
+        reapplyFilters();
       }
     }
-  }, []);
+  }, [reapplyFilters]);
 
   // Select all visible (non-dimmed) nodes
   const selectAll = useCallback(() => {
@@ -760,8 +774,9 @@ export function useCytoscape(containerRef) {
     });
     isolationRef.current = false;
     setIsolated(false);
+    reapplyFilters();
     cy.fit(getFitElements(cy), getFitPadding(cy));
-  }, []);
+  }, [reapplyFilters]);
 
   // Move mode: make selected nodes grabbable so they can be dragged as a group.
   // Cytoscape natively moves all :selected nodes when you drag one of them.

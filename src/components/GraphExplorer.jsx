@@ -246,15 +246,13 @@ export default function GraphExplorer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges, cytoscape.ready, loading]);
 
-  // Apply filters whenever they change.
-  // Deliberately omit `cytoscape` from deps — applyFilter is a stable useCallback ref
-  // and including the whole cytoscape object re-triggers filters on unrelated state
-  // changes (selection mode, move mode), which causes LOD clustering to re-fire and
-  // nodes to disappear.
+  // Apply filters whenever they change or Cytoscape becomes ready.
+  // Only cytoscape.ready is included (not the whole cytoscape object) to avoid
+  // re-triggering on unrelated state changes (selection mode, move mode).
   useEffect(() => {
     cytoscape.applyFilter(filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter]);
+  }, [filters.visibleNodeIds, filters.activeEdgeTypes, filters.cascadeEdgeFilter, cytoscape.ready]);
 
   // Apply annotations whenever they change OR data is replaced.
   // setElements() destroys all Cytoscape elements (and their classes), so annotations
