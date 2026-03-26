@@ -72,6 +72,11 @@ export function useCytoscape(containerRef) {
   const onNodeHoverOutRef = useRef(null);
   const onBgClickRef = useRef(null);
 
+  // Refs for dimming state — declared early so setElements/mergeElements/addElements can restore.
+  const lastFilterArgsRef = useRef(null);
+  const isolationRef = useRef(false);
+  const isolatedIdsRef = useRef(null);
+
   const setContainerRef = useCallback((node) => {
     containerRef.current = node;
     setContainerReady(!!node);
@@ -169,6 +174,52 @@ export function useCytoscape(containerRef) {
     };
   }, [containerReady, containerRef]);
 
+  // Restore filter/isolation dimming after element replacement or addition.
+  // Reads from refs so it works regardless of declaration order.
+  function restoreDimmingState(cy) {
+    if (!cy) return;
+    if (isolationRef.current && isolatedIdsRef.current) {
+      const ids = isolatedIdsRef.current;
+      cy.batch(() => {
+        cy.nodes().forEach((n) => {
+          if (!ids.has(n.id())) n.addClass('dimmed');
+        });
+        cy.edges().forEach((e) => {
+          if (!ids.has(e.source().id()) || !ids.has(e.target().id())) {
+            e.addClass('dimmed');
+          }
+        });
+      });
+    } else if (lastFilterArgsRef.current) {
+      const { visibleNodeIds, visibleEdgeTypes, cascade } = lastFilterArgsRef.current;
+      // Inline the filter logic — can't call applyFilter here since it may not be defined yet.
+      cy.batch(() => {
+        const nodesWithVisibleEdge = new Set();
+        cy.edges().forEach((edge) => {
+          const srcOk = visibleNodeIds.has(edge.source().id());
+          const tgtOk = visibleNodeIds.has(edge.target().id());
+          const edgeOk = !visibleEdgeTypes || visibleEdgeTypes.has(edge.data('type'));
+          if (srcOk && tgtOk && edgeOk) {
+            edge.removeClass('dimmed');
+            nodesWithVisibleEdge.add(edge.source().id());
+            nodesWithVisibleEdge.add(edge.target().id());
+          } else {
+            edge.addClass('dimmed');
+          }
+        });
+        cy.nodes().forEach((node) => {
+          if (!visibleNodeIds.has(node.id())) {
+            node.addClass('dimmed');
+          } else if (!cascade || nodesWithVisibleEdge.has(node.id())) {
+            node.removeClass('dimmed');
+          } else {
+            node.addClass('dimmed');
+          }
+        });
+      });
+    }
+  }
+
   const setElements = useCallback((elements) => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -176,6 +227,7 @@ export function useCytoscape(containerRef) {
       cy.elements().remove();
       cy.add(elements);
     });
+    restoreDimmingState(cy);
   }, []);
 
   /**
@@ -209,6 +261,7 @@ export function useCytoscape(containerRef) {
         });
       }
     });
+    restoreDimmingState(cy);
 
     return { isInitial };
   }, []);
@@ -429,9 +482,6 @@ export function useCytoscape(containerRef) {
     if (cy) cy.fit(getFitElements(cy), getFitPadding(cy));
   }, []);
 
-  // Track the latest filter args so isolation/highlight clear can re-apply them.
-  const lastFilterArgsRef = useRef(null);
-
   const applyFilter = useCallback((visibleNodeIds, visibleEdgeTypes, cascade = true) => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -617,6 +667,7 @@ export function useCytoscape(containerRef) {
         }
       }
     });
+    if (addedCount > 0) restoreDimmingState(cy);
     return addedCount;
   }, []);
 
@@ -750,9 +801,6 @@ export function useCytoscape(containerRef) {
   // --- Multi-select actions ---
 
   // Isolate: dim everything except selected nodes + their connecting edges.
-  // Stores pre-isolation state so clearIsolation() can restore it.
-  const isolationRef = useRef(false);
-  const isolatedIdsRef = useRef(null);
   const [isolated, setIsolated] = useState(false);
 
   const isolateSelected = useCallback(() => {

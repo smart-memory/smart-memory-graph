@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 (2026-03-26)
+
+### Fixed
+- Refresh/operation scrub no longer drops active filter or isolation dimming (setElements/mergeElements now restore dimming state)
+- WebSocket-streamed nodes now respect active filters (addElements re-applies dimming after adding)
+- Hoisted filter/isolation refs to stable declaration order for consistent state restoration
+
 ## 0.2.0 (2026-03-26)
 
 ### Added
