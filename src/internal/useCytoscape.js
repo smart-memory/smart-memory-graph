@@ -155,11 +155,28 @@ export function useCytoscape(containerRef) {
     };
     cy.on('select unselect', 'node', syncSelection);
 
-    const resizeObserver = new ResizeObserver(() => {
+    let prevWidth = 0;
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const newWidth = entry?.contentRect?.width || 0;
       cy.resize();
-      if (autoFitRef.current && cy.nodes().length > 0) {
-        cy.fit(getFitElements(cy), getFitPadding(cy));
+      if (cy.nodes().length > 0) {
+        if (prevWidth === 0 && newWidth > 0) {
+          // Container went from hidden (0px) to visible — layout was computed
+          // at zero dimensions, so positions are degenerate. Re-run layout.
+          firstLayoutRef.current = true;
+          const layout = cy.layout({
+            name: 'cose-bilkent', quality: 'default', animate: false,
+            randomize: true, nodeDimensionsIncludeLabels: true,
+            fit: true, padding: 30, idealEdgeLength: 110,
+            nodeRepulsion: 10000, edgeElasticity: 0.12,
+          });
+          layout.run();
+        } else if (autoFitRef.current) {
+          cy.fit(getFitElements(cy), getFitPadding(cy));
+        }
       }
+      prevWidth = newWidth;
     });
     resizeObserver.observe(container);
 
