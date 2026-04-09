@@ -84,7 +84,7 @@ export function useGraphData(adapter) {
         for (const item of memories) {
           const id = item.item_id || item.id;
           const type = item.memory_type || item.type || 'semantic';
-          const label = item.title || item.content?.substring(0, 40) || id.substring(0, 12);
+          const label = item.label || item.name || item.title || item.properties?.name || item.content?.substring(0, 40) || id.substring(0, 12);
           const category = MEMORY_TYPE_SET.has(type) ? 'memory' : 'entity';
           graphNodes.push({ id, label, type, category, content: item.content || '' });
 

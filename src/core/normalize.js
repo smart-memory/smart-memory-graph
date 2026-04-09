@@ -45,7 +45,7 @@ export function normalizeAPIResponse(apiData) {
 
     nodes.push({
       id,
-      label: item.label || item.title || item.content?.substring(0, 40) || id.substring(0, 12),
+      label: item.label || item.name || item.title || item.properties?.name || item.content?.substring(0, 40) || id.substring(0, 12),
       type,
       category,
       content: item.content || '',
