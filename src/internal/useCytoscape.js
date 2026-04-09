@@ -163,13 +163,15 @@ export function useCytoscape(containerRef) {
       if (cy.nodes().length > 0) {
         if (prevWidth === 0 && newWidth > 0) {
           // Container went from hidden (0px) to visible — layout was computed
-          // at zero dimensions, so positions are degenerate. Reset firstLayout
-          // flag and re-run the full layout (with entrance animation, component
-          // packing, and proper fit) via the ref.
-          firstLayoutRef.current = true;
-          if (runLayoutRef.current) {
-            runLayoutRef.current();
-          }
+          // at zero dimensions, so positions are degenerate. Re-run layout
+          // instantly (no entrance animation — that's for first load only).
+          const layout = cy.layout({
+            name: 'cose-bilkent', quality: 'default', animate: false,
+            randomize: true, nodeDimensionsIncludeLabels: true,
+            fit: true, padding: 30, idealEdgeLength: 110,
+            nodeRepulsion: 10000, edgeElasticity: 0.12,
+          });
+          layout.run();
         } else if (autoFitRef.current) {
           cy.fit(getFitElements(cy), getFitPadding(cy));
         }
