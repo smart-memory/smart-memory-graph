@@ -163,15 +163,13 @@ export function useCytoscape(containerRef) {
       if (cy.nodes().length > 0) {
         if (prevWidth === 0 && newWidth > 0) {
           // Container went from hidden (0px) to visible — layout was computed
-          // at zero dimensions, so positions are degenerate. Re-run layout.
+          // at zero dimensions, so positions are degenerate. Reset firstLayout
+          // flag and re-run the full layout (with entrance animation, component
+          // packing, and proper fit) via the ref.
           firstLayoutRef.current = true;
-          const layout = cy.layout({
-            name: 'cose-bilkent', quality: 'default', animate: false,
-            randomize: true, nodeDimensionsIncludeLabels: true,
-            fit: true, padding: 30, idealEdgeLength: 110,
-            nodeRepulsion: 10000, edgeElasticity: 0.12,
-          });
-          layout.run();
+          if (runLayoutRef.current) {
+            runLayoutRef.current();
+          }
         } else if (autoFitRef.current) {
           cy.fit(getFitElements(cy), getFitPadding(cy));
         }
@@ -284,6 +282,7 @@ export function useCytoscape(containerRef) {
   }, []);
 
   const firstLayoutRef = useRef(true);
+  const runLayoutRef = useRef(null);
 
   const runLayout = useCallback((layoutName = 'cose-bilkent', options = {}) => {
     const cy = cyRef.current;
@@ -483,6 +482,7 @@ export function useCytoscape(containerRef) {
       cy.layout(config).run();
     }
   }, []);
+  runLayoutRef.current = runLayout;
 
   const zoomIn = useCallback(() => {
     const cy = cyRef.current;
