@@ -290,7 +290,8 @@ export function useCytoscape(containerRef) {
     const cy = cyRef.current;
     if (!cy || cy.nodes().length === 0) return;
 
-    const shouldAnimate = !firstLayoutRef.current;
+    const isFirstLayout = firstLayoutRef.current;
+    const shouldAnimate = !isFirstLayout;
     firstLayoutRef.current = false;
 
     const layoutDefaults = {
@@ -355,8 +356,34 @@ export function useCytoscape(containerRef) {
       },
     };
 
-    const config = { ...(layoutDefaults[layoutName] || { name: layoutName }), ...options };
-    cy.layout(config).run();
+    const config = {
+      ...(layoutDefaults[layoutName] || { name: layoutName }),
+      ...options,
+    };
+
+    if (isFirstLayout) {
+      config.fit = true;
+      if (Object.prototype.hasOwnProperty.call(config, 'randomize')) {
+        config.randomize = true;
+      }
+    }
+
+    const layout = cy.layout(config);
+    layout.one('layoutstop', () => {
+      if (config.fit === false) return;
+      cy.resize();
+      cy.fit(getFitElements(cy), getFitPadding(cy));
+    });
+
+    if (isFirstLayout) {
+      requestAnimationFrame(() => {
+        cy.resize();
+        layout.run();
+      });
+      return;
+    }
+
+    layout.run();
   }, []);
   runLayoutRef.current = runLayout;
 
