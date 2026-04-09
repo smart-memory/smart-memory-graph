@@ -65,6 +65,9 @@ export function useCytoscape(containerRef) {
   const [selectionMode, setSelectionModeState] = useState(false);
   const selectionModeRef = useRef(false);
 
+  // Guard: suppress autoFit during entrance animation (nodes have size 0)
+  const entranceAnimatingRef = useRef(false);
+
   // Stable ref for event callbacks
   const onNodeClickRef = useRef(null);
   const onNodeDblClickRef = useRef(null);
@@ -172,7 +175,7 @@ export function useCytoscape(containerRef) {
             nodeRepulsion: 10000, edgeElasticity: 0.12,
           });
           layout.run();
-        } else if (autoFitRef.current) {
+        } else if (autoFitRef.current && !entranceAnimatingRef.current) {
           cy.fit(getFitElements(cy), getFitPadding(cy));
         }
       }
@@ -439,6 +442,8 @@ export function useCytoscape(containerRef) {
         const vcx = (cy.width() / 2 - pan.x) / zoom;
         const vcy = (cy.height() / 2 - pan.y) / zoom;
 
+        entranceAnimatingRef.current = true;
+
         cy.batch(() => {
           cy.nodes().forEach((n) => {
             n.position({ x: vcx, y: vcy });
@@ -477,6 +482,14 @@ export function useCytoscape(containerRef) {
             );
           });
         }, edgeDelay);
+
+        // Final fit after all entrance animations complete — ensures the
+        // viewport is correct even if ResizeObserver fired during collapse.
+        setTimeout(() => {
+          entranceAnimatingRef.current = false;
+          if (!cyRef.current) return;
+          cyRef.current.fit(getFitElements(cyRef.current), getFitPadding(cyRef.current));
+        }, edgeDelay + 250);
       });
 
       layout.run();

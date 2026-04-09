@@ -436,9 +436,9 @@ export default function GraphExplorer({
 
         <CytoscapeCanvas
           setContainerRef={cytoscape.setContainerRef}
-        />
-
-        <OriginLegend visible={showOriginLegend} />
+        >
+          <OriginLegend visible={showOriginLegend} />
+        </CytoscapeCanvas>
 
         {/* Detail panel — absolute overlay */}
         {interaction.detailPanelOpen && interaction.selectedNode && (
