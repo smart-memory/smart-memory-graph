@@ -65,9 +65,6 @@ export function useCytoscape(containerRef) {
   const [selectionMode, setSelectionModeState] = useState(false);
   const selectionModeRef = useRef(false);
 
-  // Guard: suppress autoFit during entrance animation (nodes have size 0)
-  const entranceAnimatingRef = useRef(false);
-
   // Stable ref for event callbacks
   const onNodeClickRef = useRef(null);
   const onNodeDblClickRef = useRef(null);
@@ -175,7 +172,7 @@ export function useCytoscape(containerRef) {
             nodeRepulsion: 10000, edgeElasticity: 0.12,
           });
           layout.run();
-        } else if (autoFitRef.current && !entranceAnimatingRef.current) {
+        } else if (autoFitRef.current) {
           cy.fit(getFitElements(cy), getFitPadding(cy));
         }
       }
@@ -293,7 +290,6 @@ export function useCytoscape(containerRef) {
     const cy = cyRef.current;
     if (!cy || cy.nodes().length === 0) return;
 
-    const isFirst = firstLayoutRef.current;
     const shouldAnimate = !firstLayoutRef.current;
     firstLayoutRef.current = false;
 
@@ -305,8 +301,8 @@ export function useCytoscape(containerRef) {
         animationDuration: 600,
         animationEasing: 'ease-in-out-sine',
         nodeDimensionsIncludeLabels: true,
-        fit: false,
-        padding: 20,
+        fit: true,
+        padding: 30,
         idealEdgeLength: 110,
         edgeElasticity: 0.12,
         nodeRepulsion: 10000,
@@ -317,7 +313,7 @@ export function useCytoscape(containerRef) {
         gravityRangeCompound: 2.0,
         numIter: 1200,
         tile: false,
-        randomize: shouldAnimate,
+        randomize: true,
       },
       dagre: {
         name: 'dagre',
@@ -325,6 +321,8 @@ export function useCytoscape(containerRef) {
         animate: shouldAnimate,
         animationDuration: 600,
         animationEasing: 'ease-in-out-sine',
+        fit: true,
+        padding: 30,
         nodeSep: 50,
         rankSep: 80,
       },
@@ -333,12 +331,16 @@ export function useCytoscape(containerRef) {
         animate: shouldAnimate,
         animationDuration: 600,
         animationEasing: 'ease-in-out-sine',
+        fit: true,
+        padding: 30,
       },
       concentric: {
         name: 'concentric',
         animate: shouldAnimate,
         animationDuration: 600,
         animationEasing: 'ease-in-out-sine',
+        fit: true,
+        padding: 30,
         concentric: (node) => node.degree(),
         levelWidth: () => 2,
       },
@@ -347,155 +349,14 @@ export function useCytoscape(containerRef) {
         animate: shouldAnimate,
         animationDuration: 600,
         animationEasing: 'ease-in-out-sine',
+        fit: true,
+        padding: 30,
         condense: true,
       },
     };
 
     const config = { ...(layoutDefaults[layoutName] || { name: layoutName }), ...options };
-
-    if (isFirst) {
-      // Entrance animation: compute layout positions first, then stagger nodes in.
-      // Layout runs with animate:false so positions are computed instantly without
-      // visual motion, then we collapse nodes to center and animate to final positions.
-      // randomize:true is required so cose-bilkent can spread nodes from non-degenerate
-      // start positions — without it, all nodes at {0,0} produce a collapsed result.
-      const entranceConfig = { ...config, animate: false, randomize: true };
-      const layout = cy.layout(entranceConfig);
-
-      cy.one('layoutstop', () => {
-        // Pack disconnected components close together without crushing
-        // intra-cluster edge lengths. Moves whole components, not individual nodes.
-        if (cy.nodes().length > 1) {
-          const components = cy.elements().components().filter((c) => c.nodes().length > 0);
-
-          if (components.length > 1) {
-            const graphBb = cy.elements().boundingBox();
-            const gcx = (graphBb.x1 + graphBb.x2) / 2;
-            const gcy = (graphBb.y1 + graphBb.y2) / 2;
-            const gap = 28;
-            const radiusStep = 24;
-            const compactness = 0.22;
-            const placed = [];
-
-            const overlaps = (a, b) => !(
-              a.x2 + gap <= b.x1 ||
-              a.x1 >= b.x2 + gap ||
-              a.y2 + gap <= b.y1 ||
-              a.y1 >= b.y2 + gap
-            );
-
-            const ordered = [...components].sort(
-              (a, b) => (b.boundingBox().w * b.boundingBox().h) - (a.boundingBox().w * a.boundingBox().h)
-            );
-
-            ordered.forEach((component, index) => {
-              const bb = component.boundingBox();
-              const ccx = (bb.x1 + bb.x2) / 2;
-              const ccy = (bb.y1 + bb.y2) / 2;
-              const angle = index === 0 ? 0 : Math.atan2(ccy - gcy, ccx - gcx);
-
-              let radius = index === 0 ? 0 : Math.hypot(ccx - gcx, ccy - gcy) * compactness;
-              let nextCx = gcx + Math.cos(angle) * radius;
-              let nextCy = gcy + Math.sin(angle) * radius;
-              let nextBox = {
-                x1: nextCx - bb.w / 2, x2: nextCx + bb.w / 2,
-                y1: nextCy - bb.h / 2, y2: nextCy + bb.h / 2,
-              };
-
-              while (placed.some((p) => overlaps(nextBox, p))) {
-                radius += radiusStep;
-                nextCx = gcx + Math.cos(angle) * radius;
-                nextCy = gcy + Math.sin(angle) * radius;
-                nextBox = {
-                  x1: nextCx - bb.w / 2, x2: nextCx + bb.w / 2,
-                  y1: nextCy - bb.h / 2, y2: nextCy + bb.h / 2,
-                };
-              }
-
-              const dx = nextCx - ccx;
-              const dy = nextCy - ccy;
-              component.nodes().forEach((n) => {
-                const pos = n.position();
-                n.position({ x: pos.x + dx, y: pos.y + dy });
-              });
-              placed.push(nextBox);
-            });
-          }
-
-          cy.fit(getFitElements(cy), getFitPadding(cy));
-        }
-
-        // Save final positions and target sizes computed by the layout
-        const finalPositions = {};
-        const targetSizes = {};
-        cy.nodes().forEach((n) => {
-          finalPositions[n.id()] = { ...n.position() };
-          targetSizes[n.id()] = {
-            w: parseFloat(n.style('width')),
-            h: parseFloat(n.style('height')),
-          };
-        });
-
-        // Collapse all nodes to viewport center (in graph coordinates)
-        const pan = cy.pan();
-        const zoom = cy.zoom();
-        const vcx = (cy.width() / 2 - pan.x) / zoom;
-        const vcy = (cy.height() / 2 - pan.y) / zoom;
-
-        entranceAnimatingRef.current = true;
-
-        cy.batch(() => {
-          cy.nodes().forEach((n) => {
-            n.position({ x: vcx, y: vcy });
-            n.style({ opacity: 0, width: 0, height: 0 });
-          });
-          cy.edges().style({ opacity: 0 });
-        });
-
-        // Stagger-animate nodes to their final positions (20ms between each, capped at 800ms).
-        // Look up nodes by ID at animation time (not via captured references) so that a
-        // concurrent mergeElements() call — which removes + re-adds elements — doesn't
-        // silently skip all animations because n.inside() === false on stale objects.
-        const nodeIds = cy.nodes().map((n) => n.id());
-        nodeIds.forEach((nodeId, i) => {
-          const pos = finalPositions[nodeId];
-          const { w, h } = targetSizes[nodeId] || { w: 16, h: 16 };
-          setTimeout(() => {
-            const fresh = cyRef.current?.getElementById(nodeId);
-            if (!fresh?.length) return;
-            fresh.animate(
-              { position: pos, style: { opacity: 1, width: w, height: h } },
-              { duration: 300, easing: 'ease-out-cubic' }
-            );
-          }, Math.min(i * 20, 800));
-        });
-
-        // Fade edges in after nodes have mostly appeared
-        const edgeDelay = Math.min(nodeIds.length * 20, 800) + 150;
-        setTimeout(() => {
-          if (!cyRef.current) return;
-          cyRef.current.edges().forEach((e) => {
-            if (!e.inside()) return;
-            e.animate(
-              { style: { opacity: 0.6 } },
-              { duration: 200, easing: 'ease-out-sine' }
-            );
-          });
-        }, edgeDelay);
-
-        // Final fit after all entrance animations complete — ensures the
-        // viewport is correct even if ResizeObserver fired during collapse.
-        setTimeout(() => {
-          entranceAnimatingRef.current = false;
-          if (!cyRef.current) return;
-          cyRef.current.fit(getFitElements(cyRef.current), getFitPadding(cyRef.current));
-        }, edgeDelay + 250);
-      });
-
-      layout.run();
-    } else {
-      cy.layout(config).run();
-    }
+    cy.layout(config).run();
   }, []);
   runLayoutRef.current = runLayout;
 
