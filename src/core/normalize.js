@@ -14,15 +14,29 @@ export function normalizeAPIResponse(apiData) {
   const seenNodeIds = new Set();
   const seenEdgeIds = new Set();
 
-  // Pre-scan edges to collect grounded node IDs (nodes with a GROUNDED_IN edge to a wikipedia: node)
+  // Pre-scan edges to collect grounded node IDs. A node is considered
+  // grounded if EITHER:
+  //   1. It has an outgoing/incoming GROUNDED_IN edge to a knowledge-base
+  //      node (wikipedia: or wikidata: prefix), OR
+  //   2. It carries grounding_* properties (set by GroundingEngine when
+  //      grounding metadata is applied directly to the source memory item).
+  // The two checks are OR'd so we catch every grounded node regardless of
+  // whether the wikidata edge was created and whether the metadata write
+  // succeeded.
   const groundedIds = new Set();
+  const KB_PREFIXES = ['wikipedia:', 'wikidata:'];
+  const isKbNode = (nodeId) =>
+    typeof nodeId === 'string' && KB_PREFIXES.some((p) => nodeId.startsWith(p));
+
   for (const edge of (apiData.edges || apiData.links || [])) {
     const edgeType = edge.edge_type || edge.type || '';
     if (edgeType === 'GROUNDED_IN') {
       const src = edge.source_id || edge.source || '';
       const tgt = edge.target_id || edge.target || '';
-      if (src && !src.startsWith('wikipedia:')) groundedIds.add(src);
-      if (tgt && !tgt.startsWith('wikipedia:')) groundedIds.add(tgt);
+      // The source side (the user-facing memory item) is what we want to
+      // mark as "has grounding"; the target side is the KB node itself.
+      if (src && !isKbNode(src)) groundedIds.add(src);
+      if (tgt && !isKbNode(tgt)) groundedIds.add(tgt);
     }
   }
 
@@ -31,9 +45,33 @@ export function normalizeAPIResponse(apiData) {
   for (const item of rawNodes) {
     const id = item.item_id || item.id;
     if (!id || seenNodeIds.has(id)) continue;
-    // Skip internal nodes
-    if (id.startsWith('version_') || id.startsWith('wikipedia:')) continue;
+    // Skip internal nodes (versions + KB nodes from any provider)
+    if (id.startsWith('version_') || isKbNode(id)) continue;
     seenNodeIds.add(id);
+
+    // OR-clause #2: a node is also "grounded" if it carries any
+    // grounding_* property written by GroundingEngine (the per-item
+    // metadata write added in the 2026-04-11 grounding fix). Properties
+    // can live at the top level OR inside item.properties depending on
+    // how the backend serializes the node.
+    const hasGroundingProps = (() => {
+      const flat = item || {};
+      const nested = item.properties || {};
+      const meta = item.metadata || {};
+      const sources = [flat, nested, meta];
+      for (const src of sources) {
+        if (!src || typeof src !== 'object') continue;
+        for (const key of Object.keys(src)) {
+          if (key.startsWith('grounding_') && src[key] != null && src[key] !== 0 && src[key] !== '') {
+            return true;
+          }
+        }
+      }
+      return false;
+    })();
+    if (hasGroundingProps) {
+      groundedIds.add(id);
+    }
 
     const isEntity = item.node_category === 'entity' || item.category === 'entity' || !!item.entity_type;
     const type = isEntity
@@ -65,9 +103,10 @@ export function normalizeAPIResponse(apiData) {
     const target = edge.target_id || edge.target;
     if (!source || !target) continue;
     const edgeType = edge.edge_type || edge.type || 'RELATES_TO';
-    // Skip grounding edges
+    // Skip grounding edges (they're collapsed into the .grounded flag)
+    // and any edge involving a KB node (wikipedia: / wikidata:).
     if (edgeType === 'GROUNDED_IN') continue;
-    if (source.startsWith('wikipedia:') || target.startsWith('wikipedia:')) continue;
+    if (isKbNode(source) || isKbNode(target)) continue;
 
     const id = edge.edge_id || `${source}->${target}:${edgeType}`;
     if (seenEdgeIds.has(id)) continue;
