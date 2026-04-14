@@ -27,8 +27,11 @@ import { graphNodeToCyElement, graphEdgeToCyElement } from '../internal/cytoscap
  * @param {GraphAnnotations} [props.annotations] - Annotation overlay.
  *   Shape: { nodes: Record<id, {kind, value}[]>, edges: Record<id, {kind, value}[]>,
  *            activeKinds: string[], precedence?: string[] }
- * @param {string} [props.wsUrl] - WebSocket URL for streaming
- * @param {string} [props.wsToken] - JWT token for WebSocket auth
+ * @param {string} [props.wsUrl] - WebSocket URL for streaming (deprecated — use sseBaseUrl)
+ * @param {string} [props.wsToken] - JWT token for WebSocket auth (deprecated — use sseToken)
+ * @param {string} [props.sseBaseUrl] - SmartMemory API base URL for SSE progress stream
+ * @param {string} [props.sseToken] - Bearer JWT for SSE auth
+ * @param {string} [props.replayRunId] - When set, replays a specific run (passes runId+fromSeq:0)
  * @param {import('react').ReactNode} [props.toolbarRightActions] - Extra controls rendered at toolbar right side
  * @param {string} [props.className] - Additional CSS classes
  */
@@ -38,6 +41,9 @@ export default function GraphExplorer({
   annotations,
   wsUrl,
   wsToken,
+  sseBaseUrl,
+  sseToken,
+  replayRunId,
   toolbarRightActions,
   showOriginLegend = true,
   className = '',
@@ -145,11 +151,19 @@ export default function GraphExplorer({
   const dripFeedRef = useRef(null);
   const streamRef = useRef(null);
 
-  // Streaming
+  // Replay not available state: set when 404 + no IDB recording found
+  const [replayNotAvailable, setReplayNotAvailable] = useState(false);
+
+  // Streaming — SSE transport (sseBaseUrl/sseToken) preferred; wsUrl/wsToken kept for backward compat
+  const effectiveSseBase = sseBaseUrl || '';
+  const effectiveSseToken = sseToken || wsToken;
+  const sseEnabled = !!(sseBaseUrl || sseToken || replayRunId);
+
   const stream = useGraphStream({
-    wsUrl,
-    token: wsToken,
-    enabled: !!wsUrl,
+    sseBaseUrl: effectiveSseBase,
+    token: effectiveSseToken,
+    enabled: sseEnabled,
+    runId: replayRunId,
     onElementAdded: (el) => dripFeedRef.current?.enqueue(el),
     onSearchHighlight: (ids) => cytoscape.highlightElements(ids),
     onGroundingFlash: (nodeId) => {
@@ -168,6 +182,15 @@ export default function GraphExplorer({
       refresh();
     },
     onReconnect: () => refresh(),
+    onReplayNotFound: (idbRecording) => {
+      if (idbRecording) {
+        // IDB fallback available — replay from the local recording
+        dripFeedRef.current?.replayRecording(idbRecording);
+      } else {
+        // No IDB recording either — surface "recording not available"
+        setReplayNotAvailable(true);
+      }
+    },
   });
   streamRef.current = stream;
 
@@ -379,6 +402,20 @@ export default function GraphExplorer({
           >
             Retry
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (replayNotAvailable) {
+    return (
+      <div className={`flex items-center justify-center bg-slate-900 ${className || 'h-screen'}`}>
+        <div className="text-center max-w-md">
+          <div className="text-slate-400 text-4xl mb-4">&#x231B;</div>
+          <p className="text-slate-200 font-medium mb-2">Recording not available</p>
+          <p className="text-slate-400 text-sm mb-4">
+            This replay link has expired. The stream window for run <code className="text-slate-300">{replayRunId}</code> is no longer available on the server, and no local recording was found.
+          </p>
         </div>
       </div>
     );

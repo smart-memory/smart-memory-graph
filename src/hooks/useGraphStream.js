@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { classifyEvent } from '../core/classifyEvent';
 import { eventToGraphNode, eventToGraphEdge } from '../core/eventTransform';
 import { coalesceGraphData } from '../core/coalesce';
-import { saveRecording } from '../core/eventStore';
+import { saveRecording, shouldSaveToIDB } from '../core/eventStore';
 import { subscribeProgress } from '@smartmemory/sdk-js/progress';
 
 /**
@@ -38,6 +38,7 @@ export function useGraphStream(options = {}) {
     onGraphCleared,
     onReconnect,
     onGroundingFlash,
+    onReplayNotFound,
   } = options;
 
   const [status, setStatus] = useState('disconnected');
@@ -51,8 +52,8 @@ export function useGraphStream(options = {}) {
   const isPausedRef = useRef(false);
   const [isPaused, setIsPaused] = useState(false);
 
-  const callbacksRef = useRef({ onElementAdded, onSearchHighlight, onPipelineProgress, onGraphCleared, onReconnect, onGroundingFlash });
-  callbacksRef.current = { onElementAdded, onSearchHighlight, onPipelineProgress, onGraphCleared, onReconnect, onGroundingFlash };
+  const callbacksRef = useRef({ onElementAdded, onSearchHighlight, onPipelineProgress, onGraphCleared, onReconnect, onGroundingFlash, onReplayNotFound });
+  callbacksRef.current = { onElementAdded, onSearchHighlight, onPipelineProgress, onGraphCleared, onReconnect, onGroundingFlash, onReplayNotFound };
 
   const batchRef = useRef([]);
   const batchTimerRef = useRef(null);
@@ -62,6 +63,8 @@ export function useGraphStream(options = {}) {
   const recordingBufferRef = useRef({});
   const RECORDING_FLUSH_DELAY = 2000;
   const canonicalMapRef = useRef({});
+  // Set to a non-null string when SSE fails for the retry budget — gates IDB writes.
+  const sseFailedReasonRef = useRef(null);
 
   const flushBatch = useCallback(() => {
     if (unmountedRef.current || isPausedRef.current) return;
@@ -207,11 +210,15 @@ export function useGraphStream(options = {}) {
       rec.timer = setTimeout(() => {
         const finalRec = buf[capturedKey];
         if (finalRec && finalRec.elements.length > 0) {
-          saveRecording({
-            traceId: capturedKey,
-            label: finalRec.label || `Recording ${new Date().toLocaleTimeString()}`,
-            events: finalRec.elements,
-          });
+          // IDB write only on offline / SSE-failure path (no-silent-degradation.md).
+          // In the common case (online + SSE connected) shouldSaveToIDB returns false.
+          if (shouldSaveToIDB(sseFailedReasonRef.current)) {
+            saveRecording({
+              traceId: capturedKey,
+              label: finalRec.label || `Recording ${new Date().toLocaleTimeString()}`,
+              events: finalRec.elements,
+            });
+          }
         }
         delete buf[capturedKey];
       }, RECORDING_FLUSH_DELAY);
@@ -240,6 +247,8 @@ export function useGraphStream(options = {}) {
     let unmounted = false;
     let subscription = null;
 
+    // Reset SSE-failed gate on each new connection attempt
+    sseFailedReasonRef.current = null;
     setStatus('connecting');
 
     const subscribeOpts = {
@@ -263,8 +272,23 @@ export function useGraphStream(options = {}) {
       },
       onError(err) {
         if (unmounted) return;
+        const errMsg = err?.message || String(err) || '';
+        const reason = errMsg || 'SSE connection failed after retries';
         console.warn('[useGraphStream] SSE error:', err);
         setStatus('disconnected');
+        // Flip the IDB gate on so subsequent recording flushes persist for offline replay.
+        // shouldSaveToIDB(reason) will log the warning per no-silent-degradation.md.
+        sseFailedReasonRef.current = reason;
+
+        // 404: run has expired from the stream window — try IDB, then surface "not available"
+        if (runId && errMsg.includes('404')) {
+          import('../core/eventStore').then(({ getRecordingByRunId }) =>
+            getRecordingByRunId(runId)
+          ).then((recording) => {
+            if (unmounted) return;
+            callbacksRef.current.onReplayNotFound?.(recording);
+          });
+        }
       },
       onReconnect() {
         if (unmounted) return;
