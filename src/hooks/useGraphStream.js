@@ -3,29 +3,35 @@ import { classifyEvent } from '../core/classifyEvent';
 import { eventToGraphNode, eventToGraphEdge } from '../core/eventTransform';
 import { coalesceGraphData } from '../core/coalesce';
 import { saveRecording } from '../core/eventStore';
+import { subscribeProgress } from '@smartmemory/sdk-js/progress';
 
 /**
- * React hook for real-time graph event streaming via Insights WebSocket.
- * Refactored: pure functions moved to core/, outputs GraphNode/GraphEdge instead of Cytoscape elements.
+ * React hook for real-time graph event streaming via SmartMemory SSE progress bus.
+ *
+ * Transport: uses `subscribeProgress` from the JS SDK (fetch-based SSE, header auth).
+ * WS transport is removed — the Insights WebSocket endpoint is no longer the
+ * graph viewer's data source. The new source is GET /memory/progress/stream.
  *
  * @param {Object} options
- * @param {string} [options.wsUrl] - WebSocket URL
- * @param {string} [options.token] - JWT for WS auth
+ * @param {string} [options.sseBaseUrl] - SmartMemory API base URL (e.g. 'http://localhost:9001')
+ * @param {string} [options.token] - Bearer JWT for SSE auth
  * @param {boolean} [options.enabled=true] - Toggle connection
  * @param {number} [options.bufferSize=100] - Ring buffer capacity
+ * @param {string} [options.runId] - When set, subscribes in replay mode (run_id + from_seq=0)
  * @param {Function} [options.onElementAdded] - Callback with GraphNode | GraphEdge
  * @param {Function} [options.onSearchHighlight] - Callback with array of matching node IDs
  * @param {Function} [options.onPipelineProgress] - Callback with { nodeId, stage, durationMs }
  * @param {Function} [options.onGraphCleared] - Callback when graph is cleared
- * @param {Function} [options.onReconnect] - Callback on WS reconnection
+ * @param {Function} [options.onReconnect] - Callback on SSE reconnection
  * @param {Function} [options.onGroundingFlash] - Callback with nodeId when entity is grounded
  */
 export function useGraphStream(options = {}) {
   const {
-    wsUrl,
+    sseBaseUrl = '',
     token,
     enabled = true,
     bufferSize = 100,
+    runId,
     onElementAdded,
     onSearchHighlight,
     onPipelineProgress,
@@ -33,16 +39,6 @@ export function useGraphStream(options = {}) {
     onReconnect,
     onGroundingFlash,
   } = options;
-
-  // Build Sec-WebSocket-Protocol array for auth (avoids token in URL logs)
-  const wsProtocols = (() => {
-    const protocols = ['sm.v1'];
-    if (token) {
-      const enc = btoa(token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      protocols.push(`auth.${enc}`);
-    }
-    return protocols;
-  })();
 
   const [status, setStatus] = useState('disconnected');
   const [operations, setOperations] = useState(() => {
@@ -168,8 +164,6 @@ export function useGraphStream(options = {}) {
     const batchKey = batch[0]?.traceId || `batch-${Date.now()}`;
     for (const op of batch) {
       // Pipeline stage: record so replay can show the same stage indicator transitions.
-      // Opens the group if needed so early stages (classify, llm_extract, etc.) are captured
-      // even before the first node_added event arrives.
       if (op.category === 'pipeline_stage') {
         const groupKey = op.traceId || batchKey;
         const buf = recordingBufferRef.current;
@@ -184,7 +178,6 @@ export function useGraphStream(options = {}) {
       }
 
       // Grounding flash: no graph element, but record nodeId so replay can trigger the flash animation.
-      // Only append to an existing group (requires at least one node_added to have opened it).
       if (op.category === 'grounding_flash' && op.nodeId) {
         const groupKey = op.traceId || batchKey;
         const buf = recordingBufferRef.current;
@@ -235,93 +228,66 @@ export function useGraphStream(options = {}) {
     }
   }, [bufferSize]);
 
-  // WebSocket connection
+  // SSE connection via subscribeProgress
   useEffect(() => {
     unmountedRef.current = false;
 
-    if (!enabled || !wsUrl) {
+    if (!enabled) {
       setStatus('disconnected');
       return;
     }
 
-    let ws = null;
-    let reconnectTimer = null;
-    let reconnectDelay = 1000;
     let unmounted = false;
-    let hasConnectedOnce = false;
-    let failedAttempts = 0;
-    // Only retry when we've connected before (server was running but dropped).
-    // If we've never connected, one attempt is enough — server isn't running.
-    const MAX_INITIAL_RETRIES = 1;
+    let subscription = null;
 
-    function connect() {
-      if (unmounted) return;
-      setStatus('connecting');
+    setStatus('connecting');
 
-      try {
-        ws = new WebSocket(wsUrl, wsProtocols);
-      } catch {
-        setStatus('disconnected');
-        scheduleReconnect();
-        return;
-      }
-
-      ws.onopen = () => {
-        if (unmounted) return;
-        setStatus('connected');
-        reconnectDelay = 1000;
-        failedAttempts = 0;
-        if (hasConnectedOnce && callbacksRef.current.onReconnect) {
-          callbacksRef.current.onReconnect();
-        }
-        hasConnectedOnce = true;
-      };
-
-      ws.onmessage = (event) => {
+    const subscribeOpts = {
+      baseUrl: sseBaseUrl,
+      onEvent(progressEvent) {
         if (unmounted || isPausedRef.current) return;
-        try {
-          const raw = JSON.parse(event.data);
-          const classified = classifyEvent(raw);
-          if (!classified) return;
 
-          batchRef.current.push(classified);
+        // Translate ProgressEvent into the legacy classified-event shape so the
+        // existing batching + callback-dispatch pipeline (flushBatch) is unchanged.
+        const classified = classifyProgressEvent(progressEvent);
+        if (!classified) return;
 
-          if (!batchTimerRef.current) {
-            batchTimerRef.current = setTimeout(() => {
-              batchTimerRef.current = null;
-              flushBatch();
-            }, 200);
-          }
-        } catch {
-          // Malformed message
+        batchRef.current.push(classified);
+
+        if (!batchTimerRef.current) {
+          batchTimerRef.current = setTimeout(() => {
+            batchTimerRef.current = null;
+            flushBatch();
+          }, 200);
         }
-      };
-
-      ws.onclose = () => {
+      },
+      onError(err) {
         if (unmounted) return;
+        console.warn('[useGraphStream] SSE error:', err);
         setStatus('disconnected');
-        failedAttempts++;
-        if (!hasConnectedOnce && failedAttempts >= MAX_INITIAL_RETRIES) return;
-        scheduleReconnect();
-      };
+      },
+      onReconnect() {
+        if (unmounted) return;
+        callbacksRef.current.onReconnect?.();
+      },
+    };
 
-      ws.onerror = () => {};
+    if (token) {
+      subscribeOpts.token = token;
     }
 
-    function scheduleReconnect() {
-      if (unmounted) return;
-      reconnectTimer = setTimeout(() => {
-        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-        connect();
-      }, reconnectDelay);
+    // Replay mode: pass runId + fromSeq=0
+    if (runId) {
+      subscribeOpts.runId = runId;
+      subscribeOpts.fromSeq = 0;
     }
 
-    connect();
+    subscription = subscribeProgress(subscribeOpts);
+    setStatus('connected');
 
     return () => {
       unmounted = true;
       unmountedRef.current = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (batchTimerRef.current) {
         clearTimeout(batchTimerRef.current);
         batchTimerRef.current = null;
@@ -332,12 +298,11 @@ export function useGraphStream(options = {}) {
         if (buf[key]?.timer) clearTimeout(buf[key].timer);
       }
       recordingBufferRef.current = {};
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
+      if (subscription) {
+        subscription.close();
       }
     };
-  }, [wsUrl, token, enabled, flushBatch]);
+  }, [sseBaseUrl, token, enabled, runId, flushBatch]);
 
   const pause = useCallback(() => {
     isPausedRef.current = true;
@@ -394,4 +359,108 @@ export function useGraphStream(options = {}) {
   }, [operations]);
 
   return { status, operations, opsPerSecond, isPaused, pause, resume, drainPending, clearOperations, pushOperation, getStateUpTo, recordingBufferRef };
+}
+
+// ---------------------------------------------------------------------------
+// ProgressEvent → classified event adapter
+//
+// The existing flushBatch() dispatch pipeline (and the recording accumulator)
+// work on the "classified" shape produced by classifyEvent(rawWsFrame).
+// ProgressEvents have a different wire shape (kind, stage, payload.data, etc.).
+// This adapter bridges the two without changing classifyEvent or flushBatch.
+// ---------------------------------------------------------------------------
+
+/**
+ * Translate a ProgressEvent from the SSE bus into the classified-event shape
+ * that useGraphStream's flushBatch + recording accumulator expect.
+ *
+ * Returns null for event kinds the graph viewer doesn't handle.
+ *
+ * @param {Object} progressEvent - ProgressEvent per progress-event-contract.json
+ */
+function classifyProgressEvent(progressEvent) {
+  if (!progressEvent) return null;
+
+  const { kind, stage, status, payload, run_id, seq, ts } = progressEvent;
+  const id = `pe-${run_id}-${seq}`;
+  const timestamp = ts ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+  const traceId = run_id;
+  const base = { id, timestamp, traceId, meta: progressEvent };
+
+  // Graph node events
+  if (kind === 'graph.node' && payload?.data) {
+    const data = payload.data;
+    const nodeId = data.memory_id || data.item_id || data.node_id || data.id || null;
+    if (nodeId && nodeId.startsWith('wikipedia:')) return null;
+    return {
+      ...base,
+      category: 'node_added',
+      label: `Node "${data.label || nodeId || 'unknown'}" added`,
+      nodeId,
+      meta: { ...progressEvent, data, operation: 'add_node' },
+    };
+  }
+
+  // Graph edge events
+  if (kind === 'graph.edge' && payload?.data) {
+    const data = payload.data;
+    const src = data.source_id || data.source || '';
+    const tgt = data.target_id || data.target || '';
+    const edgeType = data.edge_type || data.link_type || 'RELATES_TO';
+
+    if (edgeType === 'GROUNDED_IN' || src.startsWith('wikipedia:') || tgt.startsWith('wikipedia:')) {
+      const groundedNodeId = src.startsWith('wikipedia:') ? tgt : src;
+      const wikiId = src.startsWith('wikipedia:') ? src : tgt;
+      const wikiName = wikiId.replace('wikipedia:', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      return { ...base, category: 'grounding_flash', label: `Grounded "${wikiName}"`, nodeId: groundedNodeId };
+    }
+
+    const edgeId = data.edge_id || (src && tgt ? `${src}->${tgt}` : null);
+    return {
+      ...base,
+      category: 'edge_added',
+      label: `Edge "${edgeType}"`,
+      nodeId: src || null,
+      edgeId,
+      meta: { ...progressEvent, data, operation: 'add_edge' },
+    };
+  }
+
+  // Pipeline stage events
+  if (kind === 'pipeline.stage') {
+    const stageName = stage || 'unknown';
+    const durationMs = payload?.duration_ms;
+    const durationStr = durationMs != null ? ` (${Math.round(durationMs)}ms)` : '';
+    return {
+      ...base,
+      category: 'pipeline_stage',
+      label: `Pipeline: ${stageName.replace(/_/g, ' ')}${durationStr}`,
+      nodeId: payload?.memory_id || null,
+      meta: { ...progressEvent, operation: stageName, duration_ms: durationMs },
+    };
+  }
+
+  // Graph clear events
+  if (kind === 'graph.cleared') {
+    return { ...base, category: 'graph_cleared', label: 'Graph cleared', nodeId: null };
+  }
+
+  // Search result events
+  if (kind === 'search.result' && payload?.result_ids) {
+    return {
+      ...base,
+      category: 'search_highlight',
+      label: `Search: ${payload.result_ids.length} results`,
+      nodeId: null,
+      matchIds: payload.result_ids,
+    };
+  }
+
+  // Ingest start events
+  if (kind === 'ingest.started') {
+    const preview = payload?.content?.substring(0, 30) || payload?.memory_id || '';
+    return { ...base, category: 'ingest_started', label: `Ingesting: "${preview}..."`, nodeId: payload?.memory_id || null };
+  }
+
+  return null;
 }

@@ -5,6 +5,50 @@ import { getFitElements, getFitPadding, STREAMING_LAYOUT } from '../internal/use
 
 const GLOW_DURATION = 2500;
 
+// ---------------------------------------------------------------------------
+// original_ts-delta pacing (PLAT-PROGRESS-1 T016)
+//
+// Speed multiplier name → numeric factor.
+// Infinity = "fast" mode: emit all events as quickly as possible (delay 0).
+// ---------------------------------------------------------------------------
+
+export const SPEED_FACTORS = { '1x': 1, '2x': 2, '4x': 4, fast: Infinity };
+
+/**
+ * Compute the animation delay (ms) between two consecutive replay events.
+ *
+ * Contract (per PLAT-PROGRESS-1 plan Task 11, progress-event-contract.json PayloadConventions):
+ * - delay = (curr.payload.original_ts - prev.payload.original_ts) * 1000 ms
+ * - speedFactor divides the raw delta BEFORE clamp
+ * - Clamp to [0, 500ms] so a 10-minute real run can still replay reasonably
+ * - If original_ts is missing: log WARNING (no-silent-degradation.md) and use fallback
+ *
+ * @param {Object} curr - event or item with payload.original_ts
+ * @param {Object} prev - previous event or item with payload.original_ts
+ * @param {number} speedFactor - 1 | 2 | 4 | Infinity
+ * @param {number} [fallbackMs=200] - delay when original_ts is absent
+ * @returns {number} delay in ms, clamped to [0, 500]
+ */
+export function computeEventDelay(curr, prev, speedFactor = 1, fallbackMs = 200) {
+  const MAX_DELAY = 500;
+  const MIN_DELAY = 0;
+
+  const currTs = curr?.payload?.original_ts;
+  const prevTs = prev?.payload?.original_ts;
+
+  if (currTs == null || prevTs == null) {
+    console.warn(
+      '[useDripFeed] original_ts missing on event — falling back to wall-clock delta',
+      { curr, prev },
+    );
+    return Math.max(MIN_DELAY, Math.min(MAX_DELAY, fallbackMs));
+  }
+
+  const rawDeltaMs = (currTs - prevTs) * 1000;
+  const scaled = speedFactor === Infinity ? 0 : rawDeltaMs / speedFactor;
+  return Math.max(MIN_DELAY, Math.min(MAX_DELAY, scaled));
+}
+
 /**
  * Run a 2-cycle border-width pulse (4→6→4→6→4) on a freshly arrived node,
  * then remove the streaming-new class. Total pulse duration: ~800ms.
@@ -35,8 +79,9 @@ function pulseStreamingNode(node) {
  * @param {function} options.incrementStats - from useGraphData
  * @param {string} options.layout - current layout name
  * @param {Object} options.stream - useGraphStream return value
+ * @param {string} [options.speedMultiplier='1x'] - replay speed: '1x' | '2x' | '4x' | 'fast'
  */
-export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream, onGroundingFlash, onStageChange }) {
+export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream, onGroundingFlash, onStageChange, speedMultiplier = '1x' }) {
   const [dripInterval, setDripInterval] = useState(() => {
     const stored = localStorage.getItem('graph:dripInterval');
     return stored ? Number(stored) : 200;
@@ -317,25 +362,40 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     const emittedIds = new Set();
     const allItems = [];
 
+    // Build a map of element id → original_ts from recording events for pacing.
+    // original_ts comes from evt.meta?.payload?.original_ts (ProgressEvent convention).
+    // Falls back to evt.timestamp (ISO string converted to epoch seconds) if available.
+    const elementOriginalTs = new Map();
+    for (const evt of recording.events) {
+      const ts = evt.meta?.payload?.original_ts
+        ?? (evt.timestamp ? Date.parse(evt.timestamp) / 1000 : null);
+      const elId = evt.element?.id || evt.nodeId || null;
+      if (elId && ts != null) elementOriginalTs.set(elId, ts);
+    }
+
     for (const evt of recording.events) {
       // Pipeline stage: inject marker so replay shows the same stage transitions as live
       if (evt.category === 'pipeline_stage') {
         const stage = evt.meta?.operation || evt.label?.replace(/^Pipeline:\s*/i, '').replace(/\s*\(\d+ms\)$/, '');
-        if (stage) allItems.push({ _stageChange: true, stage, durationMs: evt.meta?.duration_ms ?? null });
+        const ts = evt.meta?.payload?.original_ts ?? (evt.timestamp ? Date.parse(evt.timestamp) / 1000 : null);
+        if (stage) allItems.push({ _stageChange: true, stage, durationMs: evt.meta?.duration_ms ?? null, payload: { original_ts: ts } });
         continue;
       }
       // Grounding flash: no element, just a nodeId marker — keep in order for replay timing
       if (evt.category === 'grounding_flash' && evt.nodeId) {
-        allItems.push({ _groundingFlash: true, nodeId: evt.nodeId });
+        const ts = elementOriginalTs.get(evt.nodeId) ?? null;
+        allItems.push({ _groundingFlash: true, nodeId: evt.nodeId, payload: { original_ts: ts } });
         continue;
       }
       const el = evt.element;
       if (!el) continue;
+      // Attach original_ts to each element item for pacing
+      const elTs = elementOriginalTs.get(el.id) ?? null;
       if (!('source' in el)) {
         // Node
         if (idRemap[el.id]) continue;
         if (coalescedNodeMap[el.id] && !emittedIds.has(el.id)) {
-          allItems.push(coalescedNodeMap[el.id]);
+          allItems.push({ ...coalescedNodeMap[el.id], payload: { original_ts: elTs } });
           emittedIds.add(el.id);
         }
       } else {
@@ -345,7 +405,7 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
         for (const ce of coalescedEdges) {
           if (emittedIds.has(ce.id)) continue;
           if ((ce.source === src && ce.target === tgt) || (ce.source === tgt && ce.target === src)) {
-            allItems.push(ce);
+            allItems.push({ ...ce, payload: { original_ts: elTs } });
             emittedIds.add(ce.id);
             break;
           }
@@ -353,7 +413,10 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
       }
     }
     for (const ce of coalescedEdges) {
-      if (!emittedIds.has(ce.id)) { allItems.push(ce); emittedIds.add(ce.id); }
+      if (!emittedIds.has(ce.id)) {
+        allItems.push({ ...ce, payload: { original_ts: null } });
+        emittedIds.add(ce.id);
+      }
     }
 
     if (allItems.length === 0) {
@@ -362,6 +425,21 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
     }
 
     const replayPendingNodes = new Map();
+
+    // Compute cumulative absolute delay for each item using original_ts deltas.
+    // Falls back to dripInterval-based spacing when original_ts is absent.
+    // Per no-silent-degradation.md: missing original_ts logs WARNING (handled inside computeEventDelay).
+    const speedFactor = SPEED_FACTORS[speedMultiplier] ?? 1;
+    const cumulativeDelays = new Array(allItems.length).fill(0);
+    for (let i = 1; i < allItems.length; i++) {
+      const delay = computeEventDelay(
+        allItems[i],
+        allItems[i - 1],
+        speedFactor,
+        dripIntervalRef.current,
+      );
+      cumulativeDelays[i] = cumulativeDelays[i - 1] + delay;
+    }
 
     allItems.forEach((el, i) => {
       const timer = setTimeout(() => {
@@ -481,10 +559,10 @@ export function useDripFeed({ cytoscape, filters, incrementStats, layout, stream
           scheduleQuietLayout();
           setTimeout(() => setIsReplaying(false), GLOW_DURATION);
         }
-      }, i * dripIntervalRef.current);
+      }, cumulativeDelays[i]);
       dripTimersRef.current.push(timer);
     });
-  }, [cytoscape, incrementStats, positionStreamedNode, scheduleQuietLayout, filters, stream, addNodeAnimated, animateEdgePulse, onGroundingFlash, onStageChange]);
+  }, [cytoscape, incrementStats, positionStreamedNode, scheduleQuietLayout, filters, stream, addNodeAnimated, animateEdgePulse, onGroundingFlash, onStageChange, speedMultiplier]);
 
   // Detect manual zoom/pan
   useEffect(() => {
