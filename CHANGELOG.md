@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed — BREAKING
+
+- **CORE-MEMORY-DYNAMICS-1 M1b: `working` → `pending` in graph-colors contract.** `contracts/graph-colors.json` memoryTypes key renamed from `"working"` to `"pending"` (color preserved at `#fb923c`). Mirrors the same rename in `smart-memory-insights/contracts/` and the monorepo-root legacy `contracts/` directory.
+
 ## 0.2.1 (2026-03-26)
 
 ### Fixed
